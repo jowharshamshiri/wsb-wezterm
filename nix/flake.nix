@@ -1,5 +1,5 @@
 {
-  description = "A GPU-accelerated cross-platform terminal emulator and multiplexer written by @wez and implemented in Rust";
+  description = "wsb-wezterm, a fork of WezTerm: a GPU-accelerated cross-platform terminal emulator and multiplexer";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -87,7 +87,7 @@
       devShells = forSystems (
         system: with (forSys system); {
           default = pkgs.mkShell {
-            name = "wezterm-shell";
+            name = "wsb-wezterm-shell";
 
             # reuse the package build inputs instead of duplicating them
             inputsFrom = [ repopkgs.wezterm ];
@@ -120,7 +120,7 @@
 
       formatter = forSystems (system: (forSys system).pkgs.nixfmt-tree);
 
-      # 0. Build Wezterm locally: `cargo build`
+      # 0. Build wsb-wezterm locally: `cargo build`
       # 1. Build the VM: `nixos-rebuild build-vm --flake ./nix#testing-on-gnome`
       # 2. Start the VM: `REPO=$PWD ./result/bin/run-nixos-vm`
       # 3. (In the VM) (optional, 1-time) Adjust your keyboard layout in settings

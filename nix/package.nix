@@ -88,7 +88,7 @@ in
 rustPlatform.buildRustPackage (finalAttrs: {
   inherit buildInputs nativeBuildInputs;
 
-  pname = "wezterm";
+  pname = "wsb-wezterm";
   src = ./..;
 
   # Rebuild the usual version number of the project from info of commit being built.
@@ -129,8 +129,8 @@ rustPlatform.buildRustPackage (finalAttrs: {
     rm -r wezterm-ssh/tests
 
     # hash does not work well with NixOS
-    substituteInPlace assets/shell-integration/wezterm.sh \
-      --replace-fail 'hash wezterm 2>/dev/null' 'command type -P wezterm &>/dev/null' \
+    substituteInPlace assets/shell-integration/wsb-wezterm.sh \
+      --replace-fail 'hash wsb-wezterm 2>/dev/null' 'command type -P wsb-wezterm &>/dev/null' \
       --replace-fail 'hash base64 2>/dev/null' 'command type -P base64 &>/dev/null' \
       --replace-fail 'hash hostname 2>/dev/null' 'command type -P hostname &>/dev/null' \
       --replace-fail 'hash hostnamectl 2>/dev/null' 'command type -P hostnamectl &>/dev/null'
@@ -144,41 +144,41 @@ rustPlatform.buildRustPackage (finalAttrs: {
       patchelf \
         --add-needed "${libGL}/lib/libEGL.so.1" \
         --add-needed "${vulkan-loader}/lib/libvulkan.so.1" \
-        $out/bin/wezterm-gui
+        $out/bin/wsb-wezterm-gui
     ''
     + lib.optionalString stdenv.hostPlatform.isDarwin /* bash */ ''
       mkdir -p "$out/Applications"
-      OUT_APP="$out/Applications/WezTerm.app"
-      cp -r assets/macos/WezTerm.app "$OUT_APP"
+      OUT_APP="$out/Applications/wsb-wezterm.app"
+      cp -r assets/macos/wsb-wezterm.app "$OUT_APP"
       rm $OUT_APP/*.dylib
       cp -r assets/shell-integration/* "$OUT_APP/Contents/Resources"
       # macOS will only recognize our application bundle
       # if the binaries are inside of it. Move them there
       # and create symbolic links for them in bin/.
       mkdir -p "$OUT_APP/Contents/MacOS"
-      mv $out/bin/{wezterm,wezterm-mux-server,wezterm-gui,strip-ansi-escapes} "$OUT_APP/Contents/MacOS"
-      ln -s "$OUT_APP/Contents/MacOS"/{wezterm,wezterm-mux-server,wezterm-gui,strip-ansi-escapes} "$out/bin"
+      mv $out/bin/{wsb-wezterm,wsb-wezterm-mux-server,wsb-wezterm-gui,strip-ansi-escapes} "$OUT_APP/Contents/MacOS"
+      ln -s "$OUT_APP/Contents/MacOS"/{wsb-wezterm,wsb-wezterm-mux-server,wsb-wezterm-gui,strip-ansi-escapes} "$out/bin"
     '';
 
   preBuild = ''
-    echo "Building Wezterm ${finalAttrs.version}..."
+    echo "Building wsb-wezterm ${finalAttrs.version}..."
   '';
 
   postInstall = ''
     mkdir -p $out/nix-support
     echo "${finalAttrs.passthru.terminfo}" >> $out/nix-support/propagated-user-env-packages
 
-    install -Dm644 assets/icon/terminal.png $out/share/icons/hicolor/128x128/apps/org.wezfurlong.wezterm.png
-    install -Dm644 assets/wezterm.desktop $out/share/applications/org.wezfurlong.wezterm.desktop
-    install -Dm644 assets/wezterm.appdata.xml $out/share/metainfo/org.wezfurlong.wezterm.appdata.xml
+    install -Dm644 assets/icon/terminal.png $out/share/icons/hicolor/128x128/apps/com.bahramj.wsb-wezterm.png
+    install -Dm644 assets/wsb-wezterm.desktop $out/share/applications/com.bahramj.wsb-wezterm.desktop
+    install -Dm644 assets/wsb-wezterm.appdata.xml $out/share/metainfo/com.bahramj.wsb-wezterm.appdata.xml
 
-    install -Dm644 assets/shell-integration/wezterm.sh -t $out/etc/profile.d
-    installShellCompletion --cmd wezterm \
+    install -Dm644 assets/shell-integration/wsb-wezterm.sh -t $out/etc/profile.d
+    installShellCompletion --cmd wsb-wezterm \
       --bash assets/shell-completion/bash \
       --fish assets/shell-completion/fish \
       --zsh assets/shell-completion/zsh
 
-    install -Dm644 assets/wezterm-nautilus.py -t $out/share/nautilus-python/extensions
+    install -Dm644 assets/wsb-wezterm-nautilus.py -t $out/share/nautilus-python/extensions
   '';
 
   passthru = {
@@ -186,9 +186,9 @@ rustPlatform.buildRustPackage (finalAttrs: {
     # A devshell cannot derive them from `inputsFrom`, so it reads them here.
     _runtimeLibs = runtimeLibs;
 
-    # the headless variant is useful when deploying wezterm's mux server on remote severs
+    # the headless variant is useful when deploying wsb-wezterm's mux server on remote severs
     headless = rustPlatform.buildRustPackage {
-      pname = "wezterm-headless";
+      pname = "wsb-wezterm-headless";
       inherit (finalAttrs)
         version
         src
@@ -217,21 +217,21 @@ rustPlatform.buildRustPackage (finalAttrs: {
       doCheck = false;
 
       postInstall = ''
-        install -Dm644 assets/shell-integration/wezterm.sh -t $out/etc/profile.d
-        install -Dm644 ${finalAttrs.passthru.terminfo}/share/terminfo/w/wezterm -t $out/share/terminfo/w
+        install -Dm644 assets/shell-integration/wsb-wezterm.sh -t $out/etc/profile.d
+        install -Dm644 ${finalAttrs.passthru.terminfo}/share/terminfo/w/wsb-wezterm -t $out/share/terminfo/w
       '';
     };
 
     terminfo =
-      runCommand "wezterm-terminfo-${finalAttrs.version}"
+      runCommand "wsb-wezterm-terminfo-${finalAttrs.version}"
         {
           nativeBuildInputs = [ ncurses ];
         }
         ''
           mkdir -p $out/share/terminfo $out/nix-support
-          tic -x -o $out/share/terminfo ${finalAttrs.src}/termwiz/data/wezterm.terminfo
+          tic -x -o $out/share/terminfo ${finalAttrs.src}/termwiz/data/wsb-wezterm.terminfo
         '';
   };
 
-  meta.mainProgram = "wezterm";
+  meta.mainProgram = "wsb-wezterm";
 })
