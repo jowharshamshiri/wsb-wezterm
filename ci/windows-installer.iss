@@ -4,7 +4,7 @@
 
 #define MyAppName "wsb-wezterm"
 ;#define MyAppVersion "1.5"
-#define MyAppPublisher "Bahram Shamshiri"
+#define MyAppPublisher "Bahram Joharshamshiri"
 #define MyAppURL "https://github.com/jowharshamshiri/wsb-wezterm"
 #define MyAppExeName "wsb-wezterm-gui.exe"
 ; The folder cargo built into: deploy.sh passes it as /DTargetDir.
@@ -55,7 +55,7 @@ Source: "{#TargetDir}\release\libEGL.dll"; DestDir: "{app}"; Flags: ignoreversio
 Source: "{#TargetDir}\release\libGLESv2.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#TargetDir}\release\conpty.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#TargetDir}\release\OpenConsole.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#TargetDir}\release\strip-ansi-escapes.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#TargetDir}\release\wsb-wezterm-strip-ansi-escapes.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
