@@ -99,6 +99,8 @@ installed beside it, and the two keep their configuration and state apart:
 - **Each cell's grapheme stays in its cell.** A program can write graphemes in cells of their own that, read one after another, make one: an emoji and a skin tone modifier, two regional indicators, a letter and a combining mark. A surface's changes (`wezterm-surface`'s `diff_lines` and the rest, which the relay writes its escapes from) place such a cell with an explicit cursor position, so the terminal reading them draws each where the pane holds it, rather than joining the two in the cells of one and drawing the rest of the line early.
 - **A key is turned into terminal input in one place** (`termwiz::input::KeyInput`), which the GUI and the relay share.
 - **A multiplexer with no domain of its own makes no ssh-agent link.** `wsb-wezterm cli proxy` and the relay run no programs that would use one, and each run used to leave an `agent.PID` link behind in the runtime directory.
+- **A pane remembers how it ended.** The multiplexer keeps, for each of the last 1024 panes it closed or whose program ended, why it closed the pane (the pane, its tab or its window closed by a client, or the server exiting), the client that asked, by its user, machine and process and, when it runs on the server's machine, its command line and the programs that started it, and how the pane's program ended, by its exit code or signal. `wsb-wezterm cli pane-end --pane-id ID` prints it as JSON, so a program told only of a hangup can ask why it came, and whoever finds a pane gone can ask what ended it ([docs](docs/cli/cli/pane-end.md)). A client's `KillPane` says whether it closed the pane or the pane's tab or window, and every `wsb-wezterm cli` command says who it is as it connects, so that the server can name it; `wsb-wezterm cli list-clients` lists the clients other than itself. This changes the multiplexer protocol.
+- **A server stopped by SIGTERM, SIGINT or SIGHUP closes its panes first.** It hangs up every pane's program, keeping as each pane's end that the server was exiting and the signal and process that stopped it, and answers `pane-end` until every program has ended, or for 10 seconds at most, before it exits with status 0. WezTerm's server died on the signal at once, and its programs heard only that their terminal hung up.
 
 ### Multiplexer clients
 
@@ -108,7 +110,7 @@ These affect a window attached to a mux server, such as with `wsb-wezterm connec
 - **A pane's resizes are sent one at a time, the latest size last.** Before, each one was sent on its own, unordered, and an earlier size could be the last one applied.
 - **Closing a window closes its tabs.** Closing a window whose tabs a server holds kills those tabs in the server, as closing each tab does. Before, it detached the window from the server's whole domain instead: every other window of that server disappeared with it, and the programs in all of them, the closed window's included, ran on. Quitting wsb-wezterm still leaves a server's programs running. A window wsb-wezterm fails to create still detaches its domain, so a failure ends no programs.
 
-Several of these change the multiplexer protocol (codec version 50): GUIs, servers and `wsb-wezterm cli` must be built from this fork alike.
+Several of these change the multiplexer protocol (codec version 51): GUIs, servers and `wsb-wezterm cli` must be built from this fork alike.
 
 ## Building
 

@@ -14,7 +14,12 @@ pub struct KillPane {
 impl KillPane {
     pub async fn run(&self, client: Client) -> anyhow::Result<()> {
         let pane_id = client.resolve_pane_id(self.pane_id).await?;
-        client.kill_pane(codec::KillPane { pane_id }).await?;
+        client
+            .kill_pane(codec::KillPane {
+                pane_id,
+                why: mux::pane_end::ClosedFor::Pane,
+            })
+            .await?;
         Ok(())
     }
 }

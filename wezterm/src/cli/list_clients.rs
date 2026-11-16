@@ -16,14 +16,24 @@ pub struct ListClientsCommand {
 impl ListClientsCommand {
     pub async fn run(&self, client: Client) -> anyhow::Result<()> {
         let out = std::io::stdout();
-        let clients = client.list_clients().await?;
+        // Every command says who it is to the multiplexer, to be named as the
+        // client that asked for what it did; this one lists the clients
+        // other than itself. A proxy renames the host it carries, so it is
+        // known by its process, its start and its number in it.
+        let own = &client.client_id;
+        let clients: Vec<_> = client
+            .list_clients()
+            .await?
+            .clients
+            .into_iter()
+            .filter(|info| {
+                (info.client_id.pid, info.client_id.epoch, info.client_id.id)
+                    != (own.pid, own.epoch, own.id)
+            })
+            .collect();
         match self.format {
             CliOutputFormatKind::Json => {
-                let clients = clients
-                    .clients
-                    .iter()
-                    .cloned()
-                    .map(CliListClientsResultItem::from);
+                let clients = clients.into_iter().map(CliListClientsResultItem::from);
                 let mut writer = serde_json::Serializer::pretty(out.lock());
                 writer.collect_seq(clients)?;
             }
@@ -90,7 +100,7 @@ impl ListClientsCommand {
                     }
                 }
 
-                for info in clients.clients {
+                for info in clients {
                     let connected = now - info.connected_at;
                     let idle = now - info.last_input;
                     data.push(vec![

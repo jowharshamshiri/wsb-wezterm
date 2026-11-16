@@ -490,9 +490,11 @@ impl SessionHandler {
                 })
                 .detach();
             }
-            Pdu::KillPane(KillPane { pane_id }) => {
+            Pdu::KillPane(KillPane { pane_id, why }) => {
                 let sender = self.to_write_tx.clone();
                 let per_pane = self.per_pane(pane_id);
+                // Read now, while the client waits for the answer and so runs.
+                let client = self.client_id.as_deref().map(mux::pane_end::ClientSeen::of);
                 spawn_into_main_thread(async move {
                     catch(
                         move || {
@@ -500,10 +502,23 @@ impl SessionHandler {
                             let pane = mux
                                 .get_pane(pane_id)
                                 .ok_or_else(|| anyhow!("no such pane {}", pane_id))?;
+                            mux.note_pane_closing(pane_id, why, client);
                             pane.kill();
                             mux.remove_pane(pane_id);
                             maybe_push_pane_changes(&pane, sender, per_pane)?;
                             Ok(Pdu::UnitResponse(UnitResponse {}))
+                        },
+                        send_response,
+                    );
+                })
+                .detach();
+            }
+            Pdu::GetPaneEnd(GetPaneEnd { pane_id }) => {
+                spawn_into_main_thread(async move {
+                    catch(
+                        move || {
+                            let end = Mux::get().pane_end(pane_id);
+                            Ok(Pdu::GetPaneEndResponse(GetPaneEndResponse { end }))
                         },
                         send_response,
                     );
@@ -1179,6 +1194,7 @@ impl SessionHandler {
             Pdu::Pong { .. }
             | Pdu::ListPanesResponse { .. }
             | Pdu::ResizeTabResponse { .. }
+            | Pdu::GetPaneEndResponse { .. }
             | Pdu::SetClipboard { .. }
             | Pdu::NotifyAlert { .. }
             | Pdu::SpawnResponse { .. }

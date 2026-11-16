@@ -102,60 +102,8 @@ impl LocalProcessInfo {
             }
         }
 
-        /// Obtain info block for a pid.
-        /// Note that the process could have gone away since we first
-        /// observed the pid and the time we call this, so we must
-        /// be able to tolerate this failing.
-        fn info_for_pid(pid: libc::pid_t) -> Option<libc::proc_bsdinfo> {
-            let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
-            let wanted_size = std::mem::size_of::<libc::proc_bsdinfo>() as _;
-            let res = unsafe {
-                libc::proc_pidinfo(
-                    pid,
-                    libc::PROC_PIDTBSDINFO,
-                    0,
-                    &mut info as *mut _ as *mut _,
-                    wanted_size,
-                )
-            };
-
-            if res == wanted_size {
-                Some(info)
-            } else {
-                None
-            }
-        }
-
         fn cwd_for_pid(pid: libc::pid_t) -> PathBuf {
             LocalProcessInfo::current_working_dir(pid as _).unwrap_or_else(PathBuf::new)
-        }
-
-        fn exe_and_args_for_pid_sysctl(pid: libc::pid_t) -> Option<(PathBuf, Vec<String>)> {
-            use libc::c_int;
-            let mut size = 64 * 1024;
-            let mut buf: Vec<u8> = Vec::with_capacity(size);
-            let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid as c_int];
-
-            let res = unsafe {
-                libc::sysctl(
-                    mib.as_mut_ptr(),
-                    mib.len() as _,
-                    buf.as_mut_ptr() as *mut _,
-                    &mut size,
-                    std::ptr::null_mut(),
-                    0,
-                )
-            };
-            if res == -1 {
-                return None;
-            }
-            if size < (std::mem::size_of::<c_int>() * 2) {
-                // Not big enough
-                return None;
-            }
-            unsafe { buf.set_len(size) };
-
-            parse_exe_and_argv_sysctl(buf)
         }
 
         fn exe_for_pid(pid: libc::pid_t) -> PathBuf {
@@ -205,6 +153,68 @@ impl LocalProcessInfo {
             None
         }
     }
+
+    /// The process that started process `pid`, and `pid`'s command line;
+    /// none when there is no such process, or it cannot be read.
+    pub fn parent_and_argv(pid: u32) -> Option<(u32, Vec<String>)> {
+        let info = info_for_pid(pid as libc::pid_t)?;
+        let argv = exe_and_args_for_pid_sysctl(pid as libc::pid_t)
+            .map(|(_, argv)| argv)
+            .unwrap_or_default();
+        Some((info.pbi_ppid, argv))
+    }
+}
+
+/// Obtain info block for a pid.
+/// Note that the process could have gone away since we first
+/// observed the pid and the time we call this, so we must
+/// be able to tolerate this failing.
+fn info_for_pid(pid: libc::pid_t) -> Option<libc::proc_bsdinfo> {
+    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+    let wanted_size = std::mem::size_of::<libc::proc_bsdinfo>() as _;
+    let res = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            &mut info as *mut _ as *mut _,
+            wanted_size,
+        )
+    };
+
+    if res == wanted_size {
+        Some(info)
+    } else {
+        None
+    }
+}
+
+fn exe_and_args_for_pid_sysctl(pid: libc::pid_t) -> Option<(PathBuf, Vec<String>)> {
+    use libc::c_int;
+    let mut size = 64 * 1024;
+    let mut buf: Vec<u8> = Vec::with_capacity(size);
+    let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid as c_int];
+
+    let res = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as _,
+            buf.as_mut_ptr() as *mut _,
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if res == -1 {
+        return None;
+    }
+    if size < (std::mem::size_of::<c_int>() * 2) {
+        // Not big enough
+        return None;
+    }
+    unsafe { buf.set_len(size) };
+
+    parse_exe_and_argv_sysctl(buf)
 }
 
 fn parse_exe_and_argv_sysctl(buf: Vec<u8>) -> Option<(PathBuf, Vec<String>)> {

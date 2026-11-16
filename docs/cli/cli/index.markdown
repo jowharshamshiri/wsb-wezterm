@@ -49,6 +49,7 @@ change.
 | Set the whole layout in one step | [set-layout](set-layout.md) |
 | Type text or keys into a pane, and read its text | [send-text](send-text.md), [send-keys](send-keys.md), [get-text](get-text.md) |
 | Follow every change of the layout, and every pane's screen | [relay --tab-of-pane](relay.md#relaying-a-tab) |
+| Ask how a pane ended: why it was closed, by which client, and how its program ended | [pane-end](pane-end.md) |
 
 All of these are requests of the multiplexer protocol, so they work the same
 for a multiplexer reached over SSH or TLS as for a local one. A client of the

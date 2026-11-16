@@ -978,6 +978,7 @@ impl AlertHandler for LocalPaneNotifHandler {
 /// Without this, typing `exit` in `cmd.exe` would keep the pane around
 /// until something else triggered the mux to prune dead processes.
 fn split_child(
+    pane_id: PaneId,
     mut process: Box<dyn Child>,
 ) -> (
     Receiver<IoResult<ExitStatus>>,
@@ -991,9 +992,13 @@ fn split_child(
 
     std::thread::spawn(move || {
         let status = process.wait();
+        let ended = status.as_ref().ok().cloned();
         tx.try_send(status).ok();
         promise::spawn::spawn_into_main_thread(async move {
             let mux = Mux::get();
+            if let Some(ended) = &ended {
+                mux.note_pane_program_ended(pane_id, pid, ended);
+            }
             mux.prune_dead_windows();
         })
         .detach();
@@ -1012,7 +1017,7 @@ impl LocalPane {
         domain_id: DomainId,
         command_description: String,
     ) -> Self {
-        let (process, signaller, pid) = split_child(process);
+        let (process, signaller, pid) = split_child(pane_id, process);
 
         terminal.set_device_control_handler(Box::new(LocalPaneDCSHandler {
             pane_id,

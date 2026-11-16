@@ -13,6 +13,8 @@ use wezterm_gui_subcommands::*;
 use wezterm_mux_server_impl::update_mux_domains_for_server;
 
 mod daemonize;
+#[cfg(unix)]
+mod stopping;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -235,6 +237,9 @@ fn run() -> anyhow::Result<()> {
         log::error!("problem spawning listeners: {:?}", e);
         e
     })?;
+
+    #[cfg(unix)]
+    stopping::watch()?;
 
     let activity = Activity::new();
 

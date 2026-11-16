@@ -1461,5 +1461,6 @@ impl Client {
     rpc!(swap_panes, SwapPanes, UnitResponse);
     rpc!(set_tab_layout, SetTabLayout, UnitResponse);
     rpc!(resize_tab, ResizeTab, ResizeTabResponse);
+    rpc!(get_pane_end, GetPaneEnd, GetPaneEndResponse);
     rpc!(set_client_workspace, SetClientWorkspace, UnitResponse);
 }

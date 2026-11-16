@@ -15,6 +15,7 @@ mod layout;
 mod list;
 mod list_clients;
 mod move_pane_to_new_tab;
+mod pane_end;
 mod proxy;
 mod relay;
 mod rename_workspace;
@@ -164,6 +165,13 @@ Outputs the pane-id for the newly created pane on success"
     #[command(name = "resize-tab", rename_all = "kebab")]
     ResizeTab(resize_tab::ResizeTab),
 
+    /// Print how a pane ended, as JSON: why the multiplexer closed it, and
+    /// the client that asked, and how the program in it ended. Exits with
+    /// status 3 when the multiplexer keeps no end of the pane: it runs and is
+    /// not closing, or it ended before the ends the multiplexer keeps.
+    #[command(name = "pane-end", rename_all = "kebab")]
+    PaneEnd(pane_end::PaneEnd),
+
     /// Swap two panes, each taking the other's place and size.
     #[command(name = "swap-panes", rename_all = "kebab")]
     SwapPanes(swap_panes::SwapPanes),
@@ -235,6 +243,15 @@ async fn run_cli_async(opts: &crate::Opt, cli: CliCommand) -> anyhow::Result<()>
             .unwrap_or(wezterm_gui_subcommands::DEFAULT_WINDOW_CLASS),
     )?;
 
+    // A command says who it is, as a GUI and a relay do, so the server can
+    // name it as the client that asked for what it did (`pane-end`). A proxy
+    // carries another client's requests, and that client says who it is.
+    if !matches!(cli.sub, CliSubCommand::Proxy(_)) {
+        client
+            .verify_version_compat(&ui, mux::client::ClientRole::Command)
+            .await?;
+    }
+
     match cli.sub {
         CliSubCommand::ListClients(cmd) => cmd.run(client).await,
         CliSubCommand::List(cmd) => cmd.run(client).await,
@@ -247,6 +264,7 @@ async fn run_cli_async(opts: &crate::Opt, cli: CliCommand) -> anyhow::Result<()>
         CliSubCommand::SetLayout(cmd) => cmd.run(client).await,
         CliSubCommand::ResizeSplit(cmd) => cmd.run(client).await,
         CliSubCommand::ResizeTab(cmd) => cmd.run(client).await,
+        CliSubCommand::PaneEnd(cmd) => cmd.run(client).await,
         CliSubCommand::SwapPanes(cmd) => cmd.run(client).await,
         CliSubCommand::SpawnCommand(cmd) => cmd.run(client, &crate::init_config(opts)?).await,
         CliSubCommand::Proxy(cmd) => cmd.run(client, &crate::init_config(opts)?).await,

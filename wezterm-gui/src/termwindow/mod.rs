@@ -3318,6 +3318,7 @@ impl TermWindow {
             self.assign_overlay_for_pane(pane_id, overlay);
             promise::spawn::spawn(future).detach();
         } else {
+            mux.note_pane_closing(pane_id, mux::pane_end::ClosedFor::Pane, None);
             mux.remove_pane(pane_id);
         }
     }

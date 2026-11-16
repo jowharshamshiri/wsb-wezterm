@@ -17,6 +17,7 @@ use config::keyassignment::{PaneDirection, ScrollbackEraseMode};
 use mux::client::{ClientId, ClientInfo, ClientRole};
 use mux::layout::LayoutNode;
 use mux::pane::PaneId;
+use mux::pane_end::{ClosedFor, PaneEnd};
 use mux::renderable::{RenderableDimensions, StableCursorPosition};
 use mux::tab::{PaneNode, SerdeUrl, SplitDirection, SplitRequest, TabId};
 use mux::window::WindowId;
@@ -443,7 +444,7 @@ macro_rules! pdu {
 /// The overall version of the codec.
 /// This must be bumped when backwards incompatible changes
 /// are made to the types and protocol.
-pub const CODEC_VERSION: usize = 50;
+pub const CODEC_VERSION: usize = 51;
 
 // Defines the Pdu enum.
 // Each struct has an explicit identifying number.
@@ -512,6 +513,8 @@ pdu! {
     ResizeTab: 68,
     ResizeTabResponse: 69,
     SetClientWorkspace: 70,
+    GetPaneEnd: 71,
+    GetPaneEndResponse: 72,
 }
 
 impl Pdu {
@@ -711,6 +714,8 @@ pub struct PaneRemoved {
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
 pub struct KillPane {
     pub pane_id: PaneId,
+    /// What the client closed: the pane, or the tab or window it is in.
+    pub why: ClosedFor,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
@@ -931,6 +936,20 @@ pub struct ResizeTabResponse {
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
 pub struct SetClientWorkspace {
     pub workspace: String,
+}
+
+/// Asks how a pane ended: why the server closed it, and how its program
+/// ended (`Mux::pane_end`).
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+pub struct GetPaneEnd {
+    pub pane_id: PaneId,
+}
+
+/// The pane's end; none when the server keeps none for it: it runs and is
+/// not closing, or it ended before the ends the server keeps.
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+pub struct GetPaneEndResponse {
+    pub end: Option<PaneEnd>,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]

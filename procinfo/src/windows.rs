@@ -357,6 +357,20 @@ impl LocalProcessInfo {
         proc.executable()
     }
 
+    /// The process that started process `pid`, and `pid`'s command line;
+    /// none when there is no such process. The command line is empty when
+    /// the process cannot be opened to read it.
+    pub fn parent_and_argv(pid: u32) -> Option<(u32, Vec<String>)> {
+        let entry = Snapshot::entries()
+            .into_iter()
+            .find(|entry| entry.th32ProcessID == pid)?;
+        let argv = ProcHandle::new(pid)
+            .and_then(|proc| proc.get_params())
+            .map(|params| params.argv)
+            .unwrap_or_default();
+        Some((entry.th32ParentProcessID, argv))
+    }
+
     pub fn with_root_pid(pid: u32) -> Option<Self> {
         log::trace!("LocalProcessInfo::with_root_pid({}), getting snapshot", pid);
         let procs = Snapshot::entries();

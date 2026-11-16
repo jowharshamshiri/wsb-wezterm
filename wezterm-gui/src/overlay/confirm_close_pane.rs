@@ -19,6 +19,7 @@ pub fn confirm_close_pane(
                 Some(tab) => tab,
                 None => return,
             };
+            mux.note_pane_closing(pane_id, mux::pane_end::ClosedFor::Pane, None);
             tab.kill_pane(pane_id);
         })
         .detach();

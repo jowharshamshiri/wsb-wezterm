@@ -2,7 +2,8 @@
 
 *Run `wsb-wezterm cli list-clients --help` to see more help*
 
-Lists the set of connected clients and some additional information about them:
+Lists the set of connected clients, other than the command itself, and some
+additional information about them:
 
 ```
 $ wsb-wezterm cli list-clients
@@ -17,8 +18,10 @@ The meanings of the fields are:
 * `PID` - the process id of the client session
 * `ROLE` - what the client is for: `gui` for a GUI showing the multiplexer's
   windows, `relay` for [wsb-wezterm cli relay](relay.md) mirroring a pane for
-  another program, and `command` for a short-lived command such as
-  `wsb-wezterm start` asking a running GUI to spawn. {{since('nightly', inline=True)}}
+  another program, and `command` for a short-lived command, such as
+  `wsb-wezterm start` asking a running GUI to spawn, or another `wsb-wezterm
+  cli` command, which says who it is so that the multiplexer can name it as
+  the client that closed a pane ([pane-end](pane-end.md)). {{since('nightly', inline=True)}}
 * `CONNECTED` - shows how long the connection has been established
 * `IDLE` - shows how long it has been since input was received from that client
 * `WORKSPACE` - shows the active workspace for that session: for a `gui`, the

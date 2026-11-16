@@ -54,53 +54,12 @@ impl LocalProcessInfo {
             pids
         }
 
-        struct LinuxStat {
-            pid: pid_t,
-            name: String,
-            status: String,
-            ppid: pid_t,
-            // Time process started after boot, measured in ticks
-            starttime: u64,
-        }
-
-        fn info_for_pid(pid: pid_t) -> Option<LinuxStat> {
-            let data = std::fs::read_to_string(format!("/proc/{}/stat", pid)).ok()?;
-            let (_pid_space, name) = data.split_once('(')?;
-            let (name, fields) = name.rsplit_once(')')?;
-            let fields = fields.split_whitespace().collect::<Vec<_>>();
-
-            Some(LinuxStat {
-                pid,
-                name: name.to_string(),
-                status: fields.first()?.to_string(),
-                ppid: fields.get(1)?.parse().ok()?,
-                starttime: fields.get(19)?.parse().ok()?,
-            })
-        }
-
         fn exe_for_pid(pid: pid_t) -> PathBuf {
             std::fs::read_link(format!("/proc/{}/exe", pid)).unwrap_or_else(|_| PathBuf::new())
         }
 
         fn cwd_for_pid(pid: pid_t) -> PathBuf {
             LocalProcessInfo::current_working_dir(pid as u32).unwrap_or_else(PathBuf::new)
-        }
-
-        fn parse_cmdline(pid: pid_t) -> Vec<String> {
-            let data = match std::fs::read(format!("/proc/{}/cmdline", pid)) {
-                Ok(data) => data,
-                Err(_) => return vec![],
-            };
-
-            let mut args = vec![];
-
-            let data = data.strip_suffix(&[0]).unwrap_or(&data);
-
-            for arg in data.split(|&c| c == 0) {
-                args.push(String::from_utf8_lossy(arg).to_owned().to_string());
-            }
-
-            args
         }
 
         let procs: Vec<_> = all_pids().into_iter().filter_map(info_for_pid).collect();
@@ -144,4 +103,52 @@ impl LocalProcessInfo {
             None
         }
     }
+
+    /// The process that started process `pid`, and `pid`'s command line;
+    /// none when there is no such process.
+    pub fn parent_and_argv(pid: u32) -> Option<(u32, Vec<String>)> {
+        let info = info_for_pid(pid as libc::pid_t)?;
+        Some((info.ppid as u32, parse_cmdline(info.pid)))
+    }
+}
+
+struct LinuxStat {
+    pid: libc::pid_t,
+    name: String,
+    status: String,
+    ppid: libc::pid_t,
+    // Time process started after boot, measured in ticks
+    starttime: u64,
+}
+
+fn info_for_pid(pid: libc::pid_t) -> Option<LinuxStat> {
+    let data = std::fs::read_to_string(format!("/proc/{}/stat", pid)).ok()?;
+    let (_pid_space, name) = data.split_once('(')?;
+    let (name, fields) = name.rsplit_once(')')?;
+    let fields = fields.split_whitespace().collect::<Vec<_>>();
+
+    Some(LinuxStat {
+        pid,
+        name: name.to_string(),
+        status: fields.first()?.to_string(),
+        ppid: fields.get(1)?.parse().ok()?,
+        starttime: fields.get(19)?.parse().ok()?,
+    })
+}
+
+fn parse_cmdline(pid: libc::pid_t) -> Vec<String> {
+    let data = match std::fs::read(format!("/proc/{}/cmdline", pid)) {
+        Ok(data) => data,
+        Err(_) => return vec![],
+    };
+
+    let mut args = vec![];
+
+    let data = data.strip_suffix(&[0]).unwrap_or(&data);
+
+    for arg in data.split(|&c| c == 0) {
+        args.push(String::from_utf8_lossy(arg).into_owned());
+    }
+
+    args
 }

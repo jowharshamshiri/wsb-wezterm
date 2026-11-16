@@ -642,6 +642,13 @@ impl Pane for ClientPane {
         let client = Arc::clone(&self.client);
         let remote_pane_id = self.remote_pane_id;
         let local_domain_id = self.client.local_domain_id;
+        // What this client closed, as its own multiplexer kept it: the pane
+        // itself unless a tab or window of it was closed.
+        let why = Mux::get()
+            .pane_end(self.local_pane_id)
+            .and_then(|end| end.closed)
+            .map(|closed| closed.why)
+            .unwrap_or(mux::pane_end::ClosedFor::Pane);
 
         // We only want to ask the server to kill the pane if the user
         // explicitly requested it to die.
@@ -666,6 +673,7 @@ impl Pane for ClientPane {
                     .client
                     .kill_pane(KillPane {
                         pane_id: remote_pane_id,
+                        why,
                     })
                     .await
             })

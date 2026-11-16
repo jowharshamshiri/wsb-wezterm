@@ -1,0 +1,7 @@
+Print how a pane ended, as JSON: why the multiplexer closed it, and the client that asked, and how the program in it ended. Exits with status 3 when the multiplexer keeps no end of the pane: it runs and is not closing, or it ended before the ends the multiplexer keeps
+
+Usage: wsb-wezterm cli pane-end --pane-id <PANE_ID>
+
+Options:
+      --pane-id <PANE_ID>  The pane whose end to print. Unlike other commands, it has no default: the pane is usually gone
+  -h, --help               Print help

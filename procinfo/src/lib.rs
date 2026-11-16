@@ -96,4 +96,9 @@ impl LocalProcessInfo {
     pub fn executable_path(_pid: u32) -> Option<PathBuf> {
         None
     }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+    pub fn parent_and_argv(_pid: u32) -> Option<(u32, Vec<String>)> {
+        None
+    }
 }

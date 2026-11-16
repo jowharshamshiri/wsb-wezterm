@@ -48,6 +48,7 @@ for cmd in \
     list \
     list-clients \
     move-pane-to-new-tab \
+    pane-end \
     relay \
     rename-workspace \
     resize-split \

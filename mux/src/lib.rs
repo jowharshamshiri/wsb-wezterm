@@ -40,6 +40,7 @@ pub mod domain;
 pub mod layout;
 pub mod localpane;
 pub mod pane;
+pub mod pane_end;
 pub mod renderable;
 pub mod ssh;
 pub mod ssh_agent;
@@ -127,6 +128,8 @@ pub struct Mux {
     num_panes_by_workspace: RwLock<HashMap<String, usize>>,
     main_thread_id: std::thread::ThreadId,
     agent: Option<AgentProxy>,
+    /// How the last panes ended ([`pane_end`]).
+    pane_ends: Mutex<pane_end::PaneEnds>,
 }
 
 const BUFSIZE: usize = 1024 * 1024;
@@ -294,10 +297,7 @@ fn allocate_socketpair() -> anyhow::Result<(FileDescriptor, FileDescriptor)> {
 /// blocking reads from the pty (non-blocking reads are not portable to
 /// all platforms and pty/tty types), parse the escape sequences and
 /// relay the actions to the mux thread to apply them to the pane.
-fn read_from_pane_pty(
-    pane: Weak<dyn Pane>,
-    mut reader: Box<dyn std::io::Read>,
-) {
+fn read_from_pane_pty(pane: Weak<dyn Pane>, mut reader: Box<dyn std::io::Read>) {
     let mut buf = vec![0; BUFSIZE];
 
     // This is used to signal that an error occurred either in this thread,
@@ -466,6 +466,7 @@ impl Mux {
             num_panes_by_workspace: RwLock::new(HashMap::new()),
             main_thread_id: std::thread::current().id(),
             agent,
+            pane_ends: Mutex::new(pane_end::PaneEnds::default()),
         }
     }
 
@@ -867,6 +868,89 @@ impl Mux {
         self.add_pane(&pane)
     }
 
+    /// Keep why pane `pane_id` is being closed, before it is: the first
+    /// reason kept is the one that stands.
+    pub fn note_pane_closing(
+        &self,
+        pane_id: PaneId,
+        why: pane_end::ClosedFor,
+        client: Option<pane_end::ClientSeen>,
+    ) {
+        self.pane_ends.lock().closing(
+            pane_id,
+            pane_end::Closed {
+                why,
+                client,
+                signal: None,
+                at_ms: pane_end::now_ms(),
+            },
+        );
+    }
+
+    /// The server is exiting, stopped by `signal`: keep that as why each live
+    /// pane is closed, and end the program of each, as closing it would. The
+    /// panes stay, so whoever asks how one ended is answered until the server
+    /// is gone. The panes still running.
+    pub fn close_every_pane_for_exit(&self, signal: pane_end::SignalSeen) -> Vec<PaneId> {
+        let panes: Vec<Arc<dyn Pane>> = self.panes.read().values().cloned().collect();
+        let mut running = Vec::new();
+        for pane in panes {
+            if pane.is_dead() {
+                continue;
+            }
+            self.pane_ends.lock().closing(
+                pane.pane_id(),
+                pane_end::Closed {
+                    why: pane_end::ClosedFor::ServerExiting,
+                    client: None,
+                    signal: Some(signal.clone()),
+                    at_ms: pane_end::now_ms(),
+                },
+            );
+            pane.kill();
+            running.push(pane.pane_id());
+        }
+        running
+    }
+
+    /// Whether the program of pane `pane_id` has ended, as this multiplexer
+    /// saw it.
+    pub fn pane_program_ended(&self, pane_id: PaneId) -> bool {
+        self.pane_ends
+            .lock()
+            .get(pane_id)
+            .is_some_and(|end| end.program.is_some())
+    }
+
+    /// Keep that every live pane of `panes` is being closed for `why`.
+    fn note_live_panes_closing<'a>(
+        &self,
+        panes: impl IntoIterator<Item = &'a Arc<dyn Pane>>,
+        why: pane_end::ClosedFor,
+    ) {
+        for pane in panes {
+            if !pane.is_dead() {
+                self.note_pane_closing(pane.pane_id(), why, None);
+            }
+        }
+    }
+
+    /// Keep how the program of pane `pane_id` ended.
+    pub fn note_pane_program_ended(&self, pane_id: PaneId, pid: Option<u32>, status: &ExitStatus) {
+        let program = pane_end::ProgramEnd {
+            pid,
+            code: status.signal_number().is_none().then(|| status.exit_code()),
+            signal: status.signal_number(),
+            at_ms: pane_end::now_ms(),
+        };
+        self.pane_ends.lock().program_ended(pane_id, program);
+    }
+
+    /// How pane `pane_id` ended, when this multiplexer keeps its end.
+    pub fn pane_end(&self, pane_id: PaneId) -> Option<pane_end::PaneEnd> {
+        self.pane_ends.lock().get(pane_id)
+    }
+
     fn remove_pane_internal(&self, pane_id: PaneId) {
         log::debug!("removing pane {}", pane_id);
         let mut changed = false;
@@ -956,7 +1040,16 @@ impl Mux {
         self.prune_dead_windows();
     }
 
+    /// Close tab `tab_id` and every pane in it.
     pub fn remove_tab(&self, tab_id: TabId) -> Option<Arc<Tab>> {
+        if let Some(tab) = self.get_tab(tab_id) {
+            let panes: Vec<_> = tab
+                .iter_panes_ignoring_zoom()
+                .into_iter()
+                .map(|pos| pos.pane)
+                .collect();
+            self.note_live_panes_closing(&panes, pane_end::ClosedFor::Tab);
+        }
         let tab = self.remove_tab_internal(tab_id);
         self.prune_dead_windows();
         tab
@@ -1014,7 +1107,17 @@ impl Mux {
         }
     }
 
+    /// Close window `window_id`, its tabs and their panes.
     pub fn kill_window(&self, window_id: WindowId) {
+        let panes: Vec<_> = match self.get_window(window_id) {
+            Some(window) => window
+                .iter_tabs()
+                .flat_map(|tab| tab.iter_panes_ignoring_zoom())
+                .map(|pos| pos.pane)
+                .collect(),
+            None => Vec::new(),
+        };
+        self.note_live_panes_closing(&panes, pane_end::ClosedFor::Window);
         self.remove_window_internal(window_id);
         self.prune_dead_windows();
     }

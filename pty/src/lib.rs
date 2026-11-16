@@ -172,12 +172,19 @@ pub trait SlavePty {
 pub struct ExitStatus {
     code: u32,
     signal: Option<String>,
+    /// The number of the signal that ended the process, where the system
+    /// gave it.
+    signal_number: Option<i32>,
 }
 
 impl ExitStatus {
     /// Construct an ExitStatus from a process return code
     pub fn with_exit_code(code: u32) -> Self {
-        Self { code, signal: None }
+        Self {
+            code,
+            signal: None,
+            signal_number: None,
+        }
     }
 
     /// Construct an ExitStatus from a signal name
@@ -185,6 +192,7 @@ impl ExitStatus {
         Self {
             code: 1,
             signal: Some(signal.to_string()),
+            signal_number: None,
         }
     }
 
@@ -204,6 +212,12 @@ impl ExitStatus {
     /// Returns the signal if present that this ExitStatus was constructed with
     pub fn signal(&self) -> Option<&str> {
         self.signal.as_deref()
+    }
+
+    /// Returns the number of the signal that ended the process, where the
+    /// system gave it
+    pub fn signal_number(&self) -> Option<i32> {
+        self.signal_number
     }
 }
 
@@ -225,6 +239,7 @@ impl From<std::process::ExitStatus> for ExitStatus {
                 return ExitStatus {
                     code: status.code().map(|c| c as u32).unwrap_or(1),
                     signal: Some(signal),
+                    signal_number: status.signal(),
                 };
             }
         }
@@ -235,7 +250,11 @@ impl From<std::process::ExitStatus> for ExitStatus {
                 .map(|c| c as u32)
                 .unwrap_or_else(|| if status.success() { 0 } else { 1 });
 
-        ExitStatus { code, signal: None }
+        ExitStatus {
+            code,
+            signal: None,
+            signal_number: None,
+        }
     }
 }
 
