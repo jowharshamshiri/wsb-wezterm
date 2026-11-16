@@ -193,3 +193,72 @@ $ cargo test --all
 $ cargo fmt --all
 ```
 
+
+## The `upstream` branch: offering a change to WezTerm
+
+wsb-wezterm's `main` began as a single commit holding WezTerm's tree at
+[wezterm/wezterm@e68a8ec](https://github.com/wezterm/wezterm/commit/e68a8ec27727fbbda15e07f0a0737cd5e16481f6),
+so it shares no history with WezTerm and none of its commits can go to
+WezTerm as a pull request. The branch `upstream` can: it is WezTerm's `main`
+with each change of this fork on top as a commit of its own, in the order
+they build. Its tree is `main`'s, apart from what WezTerm has changed since
+`main`'s base. `main` stays the branch that is built and released.
+
+`upstream` only moves forward: it is never rebased or force-pushed.
+
+### Carrying a change from `main` to `upstream`
+
+Each commit that lands on `main` is carried to `upstream` once it is on
+`main`, with its message as it is:
+
+```console
+$ git fetch origin
+$ git switch upstream
+$ git merge --ff-only origin/upstream
+$ git cherry-pick <commit on main>
+$ cargo build -p wezterm -p wezterm-gui -p wezterm-mux-server
+$ git push origin upstream
+```
+
+A conflict comes from something WezTerm changed since `main`'s base; resolve
+it as `main` would have, had it had WezTerm's change, and say so in the
+commit message. Then check that `git diff origin/main upstream` still shows
+only WezTerm's own changes since `main`'s base and their resolutions.
+
+To take WezTerm's later commits into `upstream`, merge WezTerm's `main` into
+it:
+
+```console
+$ git fetch https://github.com/wezterm/wezterm.git main
+$ git switch upstream
+$ git merge FETCH_HEAD
+```
+
+### Opening a pull request to WezTerm
+
+A change that suits WezTerm, a general fix or feature, goes to it as a pull
+request of its own, from a topic branch made off WezTerm's `main` with the
+change's commit from `upstream`:
+
+```console
+$ git fetch https://github.com/wezterm/wezterm.git main
+$ git switch -c <topic> FETCH_HEAD
+$ git cherry-pick <commit on upstream>
+$ cargo test --all
+$ git push origin <topic>
+```
+
+and the pull request is opened from `<topic>` against `wezterm/wezterm`'s
+`main`. On `upstream`, the changes that suit WezTerm come first, ahead of
+the commit that gives this fork its own names, and are written in WezTerm's
+names, so each cherry-picks onto WezTerm's `main` as it is. A pull request
+leaves out what belongs to this fork alone: its `README.md`, its
+`version.txt`, and its names, which the topic branch's commit gives as
+WezTerm's. A change that
+builds on one of this fork's own is first rewritten on WezTerm's `main`.
+
+What stays this fork's own, and is never offered: its names (the programs,
+the application id, the configuration and environment), its packaging and
+versioning, `cli relay`, the free arrangement of a tab's panes through the
+cli and the multiplexer protocol, and a tab resized as a whole by the
+multiplexer.
