@@ -3,6 +3,11 @@
 //! and which sender stopped it (`wsb-wezterm cli pane-end`), and the server
 //! stays to answer that until every pane's program has ended, or for
 //! [`WAIT`] at most, before it exits.
+//!
+//! The server takes over those signals before it listens, so a client that
+//! can reach it stops it this way. A stop that arrives while the server is
+//! still starting, before its first pane is there, has no pane to close: the
+//! server exits at once, and keeps no end for that pane.
 
 use mux::pane_end::{lineage, SignalSeen};
 use mux::Mux;

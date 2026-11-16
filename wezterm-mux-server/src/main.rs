@@ -233,13 +233,14 @@ fn run() -> anyhow::Result<()> {
 
     let executor = promise::spawn::SimpleExecutor::new();
 
+    // Before listening: a client that can reach the server can stop it.
+    #[cfg(unix)]
+    stopping::watch()?;
+
     spawn_listener().map_err(|e| {
         log::error!("problem spawning listeners: {:?}", e);
         e
     })?;
-
-    #[cfg(unix)]
-    stopping::watch()?;
 
     let activity = Activity::new();
 

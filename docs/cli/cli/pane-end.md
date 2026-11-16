@@ -44,6 +44,13 @@ hangs up each pane's program, keeping as the pane's end that the server was
 exiting, with the signal and its sender, and answers `pane-end` until every
 program has ended, or for 10 seconds at most. It then exits with status 0.
 
+The server takes over these signals before it listens, so any client that can
+reach it stops it this way. A server stopped while it is still starting,
+before its first pane is there, has no pane to close: it exits at once with
+status 0 and keeps no end for that pane. A program it was starting in that
+pane is hung up as the server's terminal goes, before it can ask how its pane
+ended.
+
 ## Synopsis
 
 ```console

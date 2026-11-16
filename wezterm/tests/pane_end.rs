@@ -133,12 +133,36 @@ fn a_running_pane_has_no_end_and_an_unknown_one_is_refused() {
 #[test]
 fn a_server_stopped_by_a_signal_closes_its_panes_naming_it_and_waits_for_them() {
     // A program that takes a while to end on its hangup, as one that records
-    // how it ended does.
+    // how it ended does, and says when it is ready for it.
     let mut server = Server::running(&[
         "sh",
         "-c",
-        "trap 'sleep 2; exit 0' HUP; while :; do sleep 0.1; done",
+        "trap 'sleep 2; exit 0' HUP; echo ready; while :; do sleep 0.1; done",
     ]);
+    // A stop before the pane's program is ready would end it outright, and
+    // one before the pane is there finds no pane to close.
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let text = server
+            .wezterm()
+            .args(["cli", "--no-auto-start", "get-text", "--pane-id", "0"])
+            .output()
+            .unwrap();
+        if text.status.success()
+            && String::from_utf8_lossy(&text.stdout)
+                .lines()
+                .any(|line| line.trim() == "ready")
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "pane 0's program never said it was ready; get-text says {} {}",
+            String::from_utf8_lossy(&text.stdout),
+            String::from_utf8_lossy(&text.stderr)
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
     // SAFETY: kill(2) on the server this test started.
     assert_eq!(
         unsafe { libc::kill(server.child.id() as i32, libc::SIGTERM) },
