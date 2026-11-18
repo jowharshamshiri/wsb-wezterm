@@ -143,6 +143,12 @@ enum SubCommand {
         #[arg(long, value_parser)]
         shell: Shell,
     },
+
+    /// Install the newest release of the channel this wsb-wezterm was published on, in place of
+    /// this one. It is verified against the release manifest's signature, SHA-256 and size
+    /// before anything is replaced; a package manager's install is left to that manager.
+    #[command(name = "upgrade")]
+    Upgrade,
 }
 
 use termwiz::escape::osc::{
@@ -761,6 +767,11 @@ fn run() -> anyhow::Result<()> {
             let mut cmd = Opt::command();
             let name = cmd.get_name().to_string();
             generate_completion(shell, &mut cmd, name, &mut std::io::stdout());
+            Ok(())
+        }
+        SubCommand::Upgrade => {
+            let outcome = wezterm_release::upgrade(wezterm_version()).map_err(|e| anyhow!(e))?;
+            println!("{}", outcome);
             Ok(())
         }
     }

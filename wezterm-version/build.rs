@@ -1,10 +1,33 @@
+/// The variable that makes a build a release (see wezterm-release's `release_line.rs`).
+const RELEASE_CHANNEL: &str = "BAHRAMJ_RELEASE_CHANNEL";
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed={}", RELEASE_CHANNEL);
 
-    // If a file named `.tag` is present, we'll take its contents for the
-    // version number that we report in wsb-wezterm -h.
     let mut ci_tag = String::new();
-    if let Ok(tag) = std::fs::read("../.tag") {
+    // A release names itself by the version it is published as, the repository's
+    // version.txt, which `wsb-wezterm upgrade` compares with the newest published one.
+    let release = std::env::var(RELEASE_CHANNEL).is_ok_and(|channel| !channel.trim().is_empty());
+    if release {
+        println!("cargo:rerun-if-changed=../version.txt");
+        let version = std::fs::read_to_string("../version.txt").unwrap_or_else(|e| {
+            panic!("a release build of wsb-wezterm is named by version.txt, which cannot be read: {e}")
+        });
+        ci_tag = version.trim().to_string();
+        let numbers: Vec<&str> = ci_tag.split('.').collect();
+        if numbers.len() != 3
+            || !numbers
+                .iter()
+                .all(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        {
+            panic!(
+                "version.txt holds {ci_tag:?}, not the <major>.<minor>.<patch> a release is published as"
+            );
+        }
+    } else if let Ok(tag) = std::fs::read("../.tag") {
+        // If a file named `.tag` is present, we'll take its contents for the
+        // version number that we report in wsb-wezterm -h.
         if let Ok(s) = String::from_utf8(tag) {
             ci_tag = s.trim().to_string();
             println!("cargo:rerun-if-changed=../.tag");

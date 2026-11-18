@@ -173,6 +173,33 @@ I can help with that. It is more important to capture the intent of the
 feature and having this written out in English also helps when it comes
 to reviewing the code.
 
+## Releasing
+
+wsb-wezterm is released from bahramj.com's release line, as the other apps published there are:
+a release builds the archive of each platform on a machine of that platform, signs the manifest
+that lists them, and makes the Debian package from the Linux archives. The release's notes are
+written there too. What a release needs from this repository is `wezterm-dist`:
+
+```bash
+cargo run --locked -p wezterm-dist -- release --platform linux-x86_64 --out-dir out/dist
+```
+
+It builds the programs for the platform it runs on (`linux-x86_64`, `linux-arm64`,
+`darwin-arm64`) with the release line in its environment, the five variables
+`wezterm-release/release_line.rs` names, and writes `wsb-wezterm-<version>-<platform>.tar.gz`,
+named by `version.txt`. On Linux its one directory `wsb-wezterm/` holds `wsb-wezterm`,
+`wsb-wezterm-gui`, `wsb-wezterm-mux-server`, `wsb-wezterm-strip-ansi-escapes`,
+`open-wsb-wezterm-here`, `LICENSE.md`, and under `share/` and `etc/` what a package puts in the
+system's places: the desktop entry, the icon, the app's metadata, the file manager's extension,
+the completions, the shell integration and the terminfo source. On macOS it is
+`wsb-wezterm.app`, built for macOS 11 or later, with the terminfo entry compiled into it. It
+stops, saying why, unless the release line is given whole and `wsb-wezterm` carries it, no
+program carries a path of the machine it was built on, and `wsb-wezterm --version` names the
+version. The same files make the same archive, byte for byte, with no AppleDouble `._` entry.
+
+A build given no release line, `cargo build` included, is a build from source:
+`wsb-wezterm upgrade` says it has no release line to follow.
+
 ## Submitting a Pull Request
 
 After considering all of the above, and once you've prepared your contribution

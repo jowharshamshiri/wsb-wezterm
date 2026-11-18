@@ -1,0 +1,30 @@
+[package]
+name = "wezterm-release"
+version = "0.1.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+description = "wsb-wezterm's release line: where its releases are published, how they are trusted, and installing the newest"
+
+[build-dependencies]
+# A release build's root keys are checked as it bakes them.
+mg-srel.workspace = true
+
+[dependencies]
+# The release archive is a .tar.gz, checked against the SHA-256 its signed manifest gives.
+flate2.workspace = true
+# The release manifest and the registry's charter are signed by a release key that two of the
+# build's root keys certify; the chain is mg-srel's.
+mg-srel.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tar.workspace = true
+# The release line over HTTPS: rustls, the web's root certificates, a proxy from the environment.
+ureq.workspace = true
+
+[dev-dependencies]
+base64 = { workspace = true, features = ["std"] }
+# The tests sign the release lines they publish, as a publisher does.
+ed25519-dalek.workspace = true
+tempfile.workspace = true

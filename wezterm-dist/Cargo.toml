@@ -1,0 +1,27 @@
+# Builds wsb-wezterm's release archives: the programs of one platform, built on that platform
+# with the release line baked in, laid out as the installed set (a folder on Linux, the
+# application bundle on macOS), in one deterministic archive. A tool of the repository's.
+[package]
+name = "wezterm-dist"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Builds wsb-wezterm's release archives"
+
+[[bin]]
+name = "wsb-wezterm-dist"
+path = "src/main.rs"
+
+[dependencies]
+flate2.workspace = true
+# The release line's variables are read and checked as wezterm-release's build reads them
+# (wezterm-release/release_line.rs), which checks each root key with mg-srel.
+mg-srel.workspace = true
+serde_json.workspace = true
+tar.workspace = true
+# The updater, whose platforms, archive names and unpacking the archives are made for: what
+# wsb-wezterm-dist packs is what `wsb-wezterm upgrade` installs.
+wezterm-release.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
