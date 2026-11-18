@@ -63,17 +63,23 @@ pub fn write(entries: &[Entry], platform: &str, out: &Path) -> Result<()> {
                 h.set_entry_type(tar::EntryType::Directory);
                 h.set_mode(0o755);
                 h.set_size(0);
-                b.append_data(&mut h, path, std::io::empty()).map_err(fail)?;
+                b.append_data(&mut h, path, std::io::empty())
+                    .map_err(fail)?;
             }
             Some((program, bytes)) => {
                 h.set_entry_type(tar::EntryType::Regular);
                 h.set_mode(if *program { 0o755 } else { 0o644 });
                 h.set_size(bytes.len() as u64);
-                b.append_data(&mut h, path, bytes.as_slice()).map_err(fail)?;
+                b.append_data(&mut h, path, bytes.as_slice())
+                    .map_err(fail)?;
             }
         }
     }
-    b.into_inner().map_err(fail)?.finish().map(|_| ()).map_err(fail)
+    b.into_inner()
+        .map_err(fail)?
+        .finish()
+        .map(|_| ())
+        .map_err(fail)
 }
 
 #[cfg(test)]
@@ -105,7 +111,10 @@ mod tests {
             .unwrap()
             .map(|e| {
                 let e = e.unwrap();
-                (e.path().unwrap().to_string_lossy().into_owned(), e.header().mode().unwrap())
+                (
+                    e.path().unwrap().to_string_lossy().into_owned(),
+                    e.header().mode().unwrap(),
+                )
             })
             .collect()
     }
@@ -120,13 +129,24 @@ mod tests {
         std::fs::write(dir.path().join(".DS_Store"), "finder").unwrap();
         let set = entries(
             dir.path(),
-            &[("Contents/MacOS/wsb-wezterm", true), ("Contents/Info.plist", false)],
+            &[
+                ("Contents/MacOS/wsb-wezterm", true),
+                ("Contents/Info.plist", false),
+            ],
         );
         let (first, second) = (dir.path().join("a.tar.gz"), dir.path().join("b.tar.gz"));
         write(&set, "darwin-arm64", &first).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(1100));
-        write(&set.iter().rev().cloned().collect::<Vec<_>>(), "darwin-arm64", &second).unwrap();
-        assert_eq!(std::fs::read(&first).unwrap(), std::fs::read(&second).unwrap());
+        write(
+            &set.iter().rev().cloned().collect::<Vec<_>>(),
+            "darwin-arm64",
+            &second,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read(&first).unwrap(),
+            std::fs::read(&second).unwrap()
+        );
         assert_eq!(
             members(&first),
             [
@@ -134,7 +154,10 @@ mod tests {
                 ("wsb-wezterm.app/Contents/".to_string(), 0o755),
                 ("wsb-wezterm.app/Contents/Info.plist".to_string(), 0o644),
                 ("wsb-wezterm.app/Contents/MacOS/".to_string(), 0o755),
-                ("wsb-wezterm.app/Contents/MacOS/wsb-wezterm".to_string(), 0o755),
+                (
+                    "wsb-wezterm.app/Contents/MacOS/wsb-wezterm".to_string(),
+                    0o755
+                ),
             ]
         );
     }
@@ -145,14 +168,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let set = entries(
             dir.path(),
-            &[("wsb-wezterm", true), ("share/terminfo/wsb-wezterm.terminfo", false)],
+            &[
+                ("wsb-wezterm", true),
+                ("share/terminfo/wsb-wezterm.terminfo", false),
+            ],
         );
         let archive = dir.path().join(name("1.2.3", "linux-arm64"));
         write(&set, "linux-arm64", &archive).unwrap();
         let root = wezterm_release::unpack(&archive, "linux-arm64", &dir.path().join("into"))
             .map_err(|e| e.to_string())
             .unwrap();
-        assert_eq!(std::fs::read_to_string(root.join("wsb-wezterm")).unwrap(), "wsb-wezterm");
+        assert_eq!(
+            std::fs::read_to_string(root.join("wsb-wezterm")).unwrap(),
+            "wsb-wezterm"
+        );
         assert!(root.join("share/terminfo/wsb-wezterm.terminfo").is_file());
     }
 
@@ -162,7 +191,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("a.tar.gz");
         let twice = entries(dir.path(), &[("wsb-wezterm", true), ("wsb-wezterm", false)]);
-        assert_eq!(write(&twice, "linux-x86_64", &out).unwrap_err(), "wsb-wezterm is in the archive twice");
+        assert_eq!(
+            write(&twice, "linux-x86_64", &out).unwrap_err(),
+            "wsb-wezterm is in the archive twice"
+        );
         let apple = entries(dir.path(), &[("share/._wsb-wezterm.desktop", false)]);
         assert_eq!(
             write(&apple, "linux-x86_64", &out).unwrap_err(),

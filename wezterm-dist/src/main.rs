@@ -27,8 +27,9 @@ type Result<T> = std::result::Result<T, String>;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let done = match args.first().map(String::as_str) {
-        Some("release") => release_args(&args[1..])
-            .and_then(|(platform, out_dir)| release(&platform, &out_dir)),
+        Some("release") => {
+            release_args(&args[1..]).and_then(|(platform, out_dir)| release(&platform, &out_dir))
+        }
         _ => Err("usage: wsb-wezterm-dist release --platform <platform> --out-dir <dir>".into()),
     };
     match done {
@@ -119,7 +120,12 @@ fn release(platform: &str, out_dir: &Path) -> Result<()> {
         build::compile_terminfo(&repo, &terminfo)?;
     }
     let made = (|| {
-        let entries = layout::set(platform, &repo, &built.programs, macos.then_some(terminfo.as_path()))?;
+        let entries = layout::set(
+            platform,
+            &repo,
+            &built.programs,
+            macos.then_some(terminfo.as_path()),
+        )?;
         let out = out_dir.join(archive::name(&version, platform));
         archive::write(&entries, platform, &out)?;
         Ok::<PathBuf, String>(out)
@@ -139,7 +145,11 @@ mod tests {
     #[test]
     fn an_archive_is_made_only_with_a_whole_release_line() {
         let e = release_line(&|_| None).unwrap_err();
-        assert!(e.contains("is not set: a wsb-wezterm without one cannot upgrade itself"), "{}", e);
+        assert!(
+            e.contains("is not set: a wsb-wezterm without one cannot upgrade itself"),
+            "{}",
+            e
+        );
     }
 
     #[test]
@@ -147,8 +157,15 @@ mod tests {
         let here = wezterm_release::platform().expect("the tests run on a released platform");
         assert!(built_here(here).is_ok());
         let e = built_here("windows-x86_64").unwrap_err();
-        assert!(e.contains("not a platform wsb-wezterm is released for"), "{}", e);
-        for other in ["linux-x86_64", "linux-arm64", "darwin-arm64"].iter().filter(|p| **p != here) {
+        assert!(
+            e.contains("not a platform wsb-wezterm is released for"),
+            "{}",
+            e
+        );
+        for other in ["linux-x86_64", "linux-arm64", "darwin-arm64"]
+            .iter()
+            .filter(|p| **p != here)
+        {
             assert!(built_here(other).unwrap_err().contains(here), "{}", other);
         }
     }
@@ -160,6 +177,9 @@ mod tests {
             release_args(&args(&["--platform", "linux-x86_64", "--out-dir", "o"])).unwrap(),
             ("linux-x86_64".to_string(), PathBuf::from("o"))
         );
-        assert_eq!(release_args(&args(&["--out-dir", "o"])).unwrap_err(), "release takes --platform");
+        assert_eq!(
+            release_args(&args(&["--out-dir", "o"])).unwrap_err(),
+            "release takes --platform"
+        );
     }
 }

@@ -6,7 +6,7 @@ use crate::testing::{
     manifest, program, release_archive, tar_gz, Publisher, Served, NOT_AFTER, NOW, REGISTRY,
 };
 use crate::{
-    archive_root, fetch_latest, latest, later, misplaced, parse_baked, platform_of,
+    archive_root, fetch_latest, later, latest, misplaced, parse_baked, platform_of,
     program_in_root, unpack, upgrade_with, Line, Outcome, Problem,
 };
 
@@ -82,7 +82,13 @@ impl Installed {
     }
 }
 
-fn upgrade(served: &Served, line: &Line, installed: &Installed, platform: &str, version: &str) -> Result<Outcome, String> {
+fn upgrade(
+    served: &Served,
+    line: &Line,
+    installed: &Installed,
+    platform: &str,
+    version: &str,
+) -> Result<Outcome, String> {
     upgrade_with(served, line, platform, NOW, &installed.program, version)
 }
 
@@ -127,7 +133,10 @@ fn a_line_signed_by_the_builds_roots_is_read() {
         .unwrap()
         .expect("a release is published");
     assert_eq!(found.version, "1.60.4000");
-    assert_eq!(found.url, Served::archive_url("release", "1.60.4000", LINUX));
+    assert_eq!(
+        found.url,
+        Served::archive_url("release", "1.60.4000", LINUX)
+    );
     assert_eq!(
         *served.asked.borrow(),
         [
@@ -154,9 +163,15 @@ fn a_tampered_unsigned_or_foreign_manifest_is_refused() {
     let at = changed.len() - 2;
     changed[at] ^= 1;
     served.put(&Served::manifest_url(), changed);
-    assert_eq!(reason(fetch_latest(&served, &line, LINUX, NOW)), "manifest_signature_invalid");
+    assert_eq!(
+        reason(fetch_latest(&served, &line, LINUX, NOW)),
+        "manifest_signature_invalid"
+    );
     served.remove(&format!("{}.sig", Served::manifest_url()));
-    assert_eq!(reason(fetch_latest(&served, &line, LINUX, NOW)), "manifest_unsigned");
+    assert_eq!(
+        reason(fetch_latest(&served, &line, LINUX, NOW)),
+        "manifest_unsigned"
+    );
 
     let served = published(&publisher, "prod");
     let manifest = served.files.borrow()[&Served::manifest_url()].clone();
@@ -164,7 +179,10 @@ fn a_tampered_unsigned_or_foreign_manifest_is_refused() {
         &format!("{}.sig", Served::manifest_url()),
         Publisher::foreign().sign(&manifest, "prod"),
     );
-    assert_eq!(reason(fetch_latest(&served, &line, LINUX, NOW)), "insufficient_root_signatures");
+    assert_eq!(
+        reason(fetch_latest(&served, &line, LINUX, NOW)),
+        "insufficient_root_signatures"
+    );
 }
 
 /// A certificate for another environment, or past its validity, is refused.
@@ -173,12 +191,20 @@ fn a_certificate_for_another_environment_or_out_of_date_is_refused() {
     let publisher = Publisher::new();
     let served = published(&publisher, "prod");
     let charter = Publisher::charter(REGISTRY, "staging");
-    served.put(&format!("{}/charter.json.sig", REGISTRY), publisher.sign_charter(&charter));
+    served.put(
+        &format!("{}/charter.json.sig", REGISTRY),
+        publisher.sign_charter(&charter),
+    );
     served.put(&format!("{}/charter.json", REGISTRY), charter);
     let refused = fetch_latest(&served, &publisher.line("release", "staging"), LINUX, NOW);
     assert_eq!(reason(refused), "environment_mismatch");
     let served = published(&publisher, "prod");
-    let late = fetch_latest(&served, &publisher.line("release", "prod"), LINUX, NOT_AFTER + 1);
+    let late = fetch_latest(
+        &served,
+        &publisher.line("release", "prod"),
+        LINUX,
+        NOT_AFTER + 1,
+    );
     assert_eq!(reason(late), "expired_certificate");
 }
 
@@ -202,7 +228,10 @@ fn a_foreign_charter_is_refused_before_the_manifest_is_read() {
     refuses(&served, "insufficient_root_signatures");
     let elsewhere = Publisher::charter("https://elsewhere.example", "prod");
     served.put(&format!("{}/charter.json", REGISTRY), elsewhere.clone());
-    served.put(&format!("{}/charter.json.sig", REGISTRY), publisher.sign_charter(&elsewhere));
+    served.put(
+        &format!("{}/charter.json.sig", REGISTRY),
+        publisher.sign_charter(&elsewhere),
+    );
     refuses(&served, "charter_anchor_mismatch");
     let certificate = Publisher::certificate(&publisher.release, "prod");
     let roots = [&publisher.roots[0], &publisher.roots[1]];
@@ -222,14 +251,21 @@ fn a_foreign_charter_is_refused_before_the_manifest_is_read() {
     served.remove(&format!("{}/charter.json", REGISTRY));
     served.asked.borrow_mut().clear();
     let failed = fetch_latest(&served, &line, LINUX, NOW).expect_err("no charter");
-    assert!(matches!(&failed, Problem::Failed(why) if why.contains("has no charter")), "{:?}", failed);
-    assert_eq!(*served.asked.borrow(), [format!("{}/charter.json", REGISTRY)]);
+    assert!(
+        matches!(&failed, Problem::Failed(why) if why.contains("has no charter")),
+        "{:?}",
+        failed
+    );
+    assert_eq!(
+        *served.asked.borrow(),
+        [format!("{}/charter.json", REGISTRY)]
+    );
 }
 
 /// A signed manifest that is not wsb-wezterm's, or leaves the platform out, is refused for
 /// its content.
 #[test]
-fn a_manifest_that_is_not_wsb_weztermss_or_not_whole_is_refused() {
+fn a_manifest_that_is_not_wsb_wezterms_or_not_whole_is_refused() {
     let url = "https://release.example/wsb-wezterm/release/1.0.0/a";
     let sha = "a".repeat(64);
     let good = manifest("release", "1.0.0", LINUX, url, &sha, 10);
@@ -261,7 +297,14 @@ fn the_newest_release_replaces_the_whole_installed_set() {
         let installed = Installed::new("1.51.3451", platform);
         let stale = installed.set.join("left-by-the-old-release");
         std::fs::write(&stale, "old").unwrap();
-        let outcome = upgrade(&served, &publisher.line("release", "prod"), &installed, platform, "1.51.3451").unwrap();
+        let outcome = upgrade(
+            &served,
+            &publisher.line("release", "prod"),
+            &installed,
+            platform,
+            "1.51.3451",
+        )
+        .unwrap();
         assert_eq!(
             outcome,
             Outcome::Installed {
@@ -274,7 +317,12 @@ fn the_newest_release_replaces_the_whole_installed_set() {
         );
         assert_eq!(installed.says(), program("1.60.4000"), "{}", platform);
         assert!(!stale.exists(), "the old set is gone whole: {}", platform);
-        assert_eq!(installed.left_beside(), Vec::<String>::new(), "{}", platform);
+        assert_eq!(
+            installed.left_beside(),
+            Vec::<String>::new(),
+            "{}",
+            platform
+        );
     }
 }
 
@@ -313,16 +361,26 @@ fn an_archive_other_than_the_signed_release_is_refused_and_nothing_changes() {
     changed[middle] ^= 1;
     let cases: Vec<(&str, Option<Vec<u8>>, Vec<u8>)> = vec![
         ("archive_sha256_mismatch", Some(changed), archive.clone()),
-        ("archive_size_mismatch", Some([archive.clone(), b"x".to_vec()].concat()), archive.clone()),
         (
-            "archive_layout",
-            None,
-            tar_gz(&[("._wsb-wezterm", b"attributes"), ("wsb-wezterm/wsb-wezterm", &program("1.60.4000"))]),
+            "archive_size_mismatch",
+            Some([archive.clone(), b"x".to_vec()].concat()),
+            archive.clone(),
         ),
         (
             "archive_layout",
             None,
-            tar_gz(&[("wsb-wezterm/wsb-wezterm", &program("1.60.4000")), ("wsb-wezterm/._wsb-wezterm", b"a")]),
+            tar_gz(&[
+                ("._wsb-wezterm", b"attributes"),
+                ("wsb-wezterm/wsb-wezterm", &program("1.60.4000")),
+            ]),
+        ),
+        (
+            "archive_layout",
+            None,
+            tar_gz(&[
+                ("wsb-wezterm/wsb-wezterm", &program("1.60.4000")),
+                ("wsb-wezterm/._wsb-wezterm", b"a"),
+            ]),
         ),
         ("archive_version", None, release_archive("1.59.0", LINUX)),
     ];
@@ -334,7 +392,11 @@ fn an_archive_other_than_the_signed_release_is_refused_and_nothing_changes() {
         }
         let installed = Installed::new("1.51.3451", LINUX);
         let refused = upgrade(&served, &line, &installed, LINUX, "1.51.3451").expect_err("refused");
-        assert!(refused.contains(&format!("(refused: {})", expected)), "{}", refused);
+        assert!(
+            refused.contains(&format!("(refused: {})", expected)),
+            "{}",
+            refused
+        );
         assert_eq!(installed.says(), program("1.51.3451"));
         assert_eq!(installed.left_beside(), Vec::<String>::new());
     }
@@ -348,11 +410,21 @@ fn only_an_unpacked_release_is_replaced_and_a_debs_is_left_to_apt() {
     let line = publisher.line("release", "prod");
     let served = published(&publisher, "prod");
     let dir = tempfile::tempdir().unwrap();
-    let elsewhere = dir.path().canonicalize().unwrap().join("bin").join("wsb-wezterm");
+    let elsewhere = dir
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("bin")
+        .join("wsb-wezterm");
     std::fs::create_dir_all(elsewhere.parent().unwrap()).unwrap();
     std::fs::write(&elsewhere, program("1.51.3451")).unwrap();
-    let refused = upgrade_with(&served, &line, LINUX, NOW, &elsewhere, "1.51.3451").expect_err("not a release");
-    assert!(refused.contains("is not the wsb-wezterm of a release unpacked from its archive"), "{}", refused);
+    let refused = upgrade_with(&served, &line, LINUX, NOW, &elsewhere, "1.51.3451")
+        .expect_err("not a release");
+    assert!(
+        refused.contains("is not the wsb-wezterm of a release unpacked from its archive"),
+        "{}",
+        refused
+    );
 
     let installed = Installed::new("1.51.3451", LINUX);
     std::fs::write(
@@ -372,7 +444,10 @@ fn only_an_unpacked_release_is_replaced_and_a_debs_is_left_to_apt() {
         "wsb-wezterm 1.60.4000 is the newest release on the release channel for linux-x86_64, and \
          wsb-wezterm was installed by apt, which upgrades it: run `sudo apt install --only-upgrade wsb-wezterm`"
     );
-    assert!(!served.asked.borrow().contains(&Served::archive_url("release", "1.60.4000", LINUX)));
+    assert!(!served
+        .asked
+        .borrow()
+        .contains(&Served::archive_url("release", "1.60.4000", LINUX)));
 }
 
 /// A registry that cannot be reached fails naming what was asked.
@@ -389,9 +464,22 @@ fn an_unreachable_registry_fails_naming_it() {
     }
     let publisher = Publisher::new();
     let installed = Installed::new("1.51.3451", LINUX);
-    let failed = upgrade_with(&Down, &publisher.line("release", "prod"), LINUX, NOW, &installed.program, "1.51.3451")
-        .expect_err("down");
-    assert_eq!(failed, format!("could not reach {}/charter.json: connection refused", REGISTRY));
+    let failed = upgrade_with(
+        &Down,
+        &publisher.line("release", "prod"),
+        LINUX,
+        NOW,
+        &installed.program,
+        "1.51.3451",
+    )
+    .expect_err("down");
+    assert_eq!(
+        failed,
+        format!(
+            "could not reach {}/charter.json: connection refused",
+            REGISTRY
+        )
+    );
 }
 
 #[test]
@@ -400,15 +488,33 @@ fn an_archive_unpacks_only_into_its_one_directory() {
         let dir = tempfile::tempdir().unwrap();
         let archive = dir.path().join("a.tar.gz");
         std::fs::write(&archive, bytes).unwrap();
-        (unpack(&archive, platform, &dir.path().join("into")).map(|_| ()), dir)
+        (
+            unpack(&archive, platform, &dir.path().join("into")).map(|_| ()),
+            dir,
+        )
     };
-    assert_eq!(unpack_bytes(MACOS, release_archive("1.0.0", MACOS)).0, Ok(()));
-    assert_eq!(reason(unpack_bytes(MACOS, release_archive("1.0.0", LINUX)).0), "archive_layout");
-    assert_eq!(reason(unpack_bytes(LINUX, tar_gz(&[("other/wsb-wezterm", b"x")])).0), "archive_layout");
-    assert_eq!(reason(unpack_bytes(LINUX, b"not gzip".to_vec()).0), "archive_layout");
-    assert!(misplaced(Path::new("wsb-wezterm.app/Contents/._Info.plist"), "wsb-wezterm.app")
-        .unwrap()
-        .contains("AppleDouble"));
+    assert_eq!(
+        unpack_bytes(MACOS, release_archive("1.0.0", MACOS)).0,
+        Ok(())
+    );
+    assert_eq!(
+        reason(unpack_bytes(MACOS, release_archive("1.0.0", LINUX)).0),
+        "archive_layout"
+    );
+    assert_eq!(
+        reason(unpack_bytes(LINUX, tar_gz(&[("other/wsb-wezterm", b"x")])).0),
+        "archive_layout"
+    );
+    assert_eq!(
+        reason(unpack_bytes(LINUX, b"not gzip".to_vec()).0),
+        "archive_layout"
+    );
+    assert!(misplaced(
+        Path::new("wsb-wezterm.app/Contents/._Info.plist"),
+        "wsb-wezterm.app"
+    )
+    .unwrap()
+    .contains("AppleDouble"));
 }
 
 #[test]

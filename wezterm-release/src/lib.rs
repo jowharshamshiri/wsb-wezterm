@@ -370,11 +370,7 @@ pub fn latest(manifest: &[u8], channel: &str, platform: &str) -> Result<Option<R
             channel
         )));
     };
-    let Some(version) = releases
-        .latest_version
-        .as_deref()
-        .filter(|v| !v.is_empty())
-    else {
+    let Some(version) = releases.latest_version.as_deref().filter(|v| !v.is_empty()) else {
         return Ok(None);
     };
     let Some(release) = releases.versions.get(version) else {
@@ -630,7 +626,12 @@ pub fn unpack(archive: &Path, platform: &str, directory: &Path) -> Result<PathBu
     let file = std::fs::File::open(archive)
         .map_err(|e| Problem::Failed(format!("cannot read {}: {}", archive.display(), e)))?;
     let mut entries = tar::Archive::new(flate2::read::GzDecoder::new(file));
-    let layout = |why: String| refused("archive_layout", format!("{} holds {}", archive.display(), why));
+    let layout = |why: String| {
+        refused(
+            "archive_layout",
+            format!("{} holds {}", archive.display(), why),
+        )
+    };
     let unreadable = |e: std::io::Error| {
         refused(
             "archive_layout",

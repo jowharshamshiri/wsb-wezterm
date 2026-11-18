@@ -9,7 +9,9 @@ use std::path::Path;
 use base64::Engine as _;
 use ed25519_dalek::Signer;
 
-use crate::{archive_name, archive_root, charter_rules, program_in_root, Line, Transport, APP_ID, WORDS};
+use crate::{
+    archive_name, archive_root, charter_rules, program_in_root, Line, Transport, APP_ID, WORDS,
+};
 
 /// Issue and expiry of every certificate the tests make, and the clock they verify at.
 pub const ISSUED_AT: u64 = 1_700_000_000;

@@ -7,7 +7,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 /// The cargo packages whose binaries are [`PROGRAMS`].
-const PACKAGES: [&str; 4] = ["wezterm", "wezterm-gui", "wezterm-mux-server", "strip-ansi-escapes"];
+const PACKAGES: [&str; 4] = [
+    "wezterm",
+    "wezterm-gui",
+    "wezterm-mux-server",
+    "strip-ansi-escapes",
+];
 
 /// What a build produced, and the paths of the machine it was built on, which no program may
 /// carry.
@@ -37,7 +42,11 @@ pub fn version(repo: &Path) -> Result<String> {
         .trim()
         .to_owned();
     let numbers: Vec<&str> = version.split('.').collect();
-    if numbers.len() != 3 || !numbers.iter().all(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())) {
+    if numbers.len() != 3
+        || !numbers
+            .iter()
+            .all(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    {
         return Err(format!(
             "{} holds {:?}, not the <major>.<minor>.<patch> a release is published as",
             file.display(),
@@ -51,9 +60,11 @@ pub fn version(repo: &Path) -> Result<String> {
 fn cargo_home(meta: &serde_json::Value) -> Option<PathBuf> {
     meta["packages"].as_array()?.iter().find_map(|p| {
         let manifest = p["manifest_path"].as_str()?;
-        ["/registry/", "/git/checkouts/"]
-            .iter()
-            .find_map(|marker| manifest.find(marker).map(|at| PathBuf::from(&manifest[..at])))
+        ["/registry/", "/git/checkouts/"].iter().find_map(|marker| {
+            manifest
+                .find(marker)
+                .map(|at| PathBuf::from(&manifest[..at]))
+        })
     })
 }
 
@@ -83,7 +94,10 @@ pub fn build(repo: &Path, macos_deployment_target: Option<&str>) -> Result<Built
         String::from_utf8_lossy(&run(Command::new("rustc").args(["--print", "sysroot"]))?).trim(),
     );
     let mut pairs: Vec<(PathBuf, &str)> = Vec::new();
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from).filter(|h| h.parent().is_some()) {
+    if let Some(home) = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|h| h.parent().is_some())
+    {
         pairs.push((home, "/home"));
     }
     if let Some(home) = cargo_home(&meta) {
@@ -98,7 +112,12 @@ pub fn build(repo: &Path, macos_deployment_target: Option<&str>) -> Result<Built
     let mut cmd = Command::new("cargo");
     cmd.current_dir(repo)
         .env("CARGO_ENCODED_RUSTFLAGS", remaps(&pairs))
-        .args(["build", "--locked", "--release", "--message-format=json-render-diagnostics"]);
+        .args([
+            "build",
+            "--locked",
+            "--release",
+            "--message-format=json-render-diagnostics",
+        ]);
     for package in PACKAGES {
         cmd.args(["-p", package]);
     }
@@ -128,7 +147,10 @@ pub fn build(repo: &Path, macos_deployment_target: Option<&str>) -> Result<Built
     }
     for program in PROGRAMS {
         if !programs.iter().any(|(n, _)| *n == program) {
-            return Err(format!("cargo built no {}: its messages name no such executable", program));
+            return Err(format!(
+                "cargo built no {}: its messages name no such executable",
+                program
+            ));
         }
     }
     Ok(Built {
@@ -224,7 +246,8 @@ fn says_version(program: &Path) -> Result<String> {
 /// The terminfo entry compiled by the system's `tic` into a folder of its own, `into`, as a
 /// macOS bundle carries it.
 pub fn compile_terminfo(repo: &Path, into: &Path) -> Result<()> {
-    std::fs::create_dir_all(into).map_err(|e| format!("cannot create {}: {}", into.display(), e))?;
+    std::fs::create_dir_all(into)
+        .map_err(|e| format!("cannot create {}: {}", into.display(), e))?;
     run(Command::new("tic")
         .arg("-x")
         .arg("-o")
@@ -251,15 +274,24 @@ mod tests {
             executable(&artifact("wsb-wezterm-gui", "bin", "/b/wsb-wezterm-gui")).unwrap(),
             Some(("wsb-wezterm-gui", PathBuf::from("/b/wsb-wezterm-gui")))
         );
-        assert_eq!(executable(&artifact("wezterm", "lib", "/b/libwezterm.rlib")).unwrap(), None);
-        assert_eq!(executable(&artifact("sync-color-schemes", "bin", "/b/x")).unwrap(), None);
+        assert_eq!(
+            executable(&artifact("wezterm", "lib", "/b/libwezterm.rlib")).unwrap(),
+            None
+        );
+        assert_eq!(
+            executable(&artifact("sync-color-schemes", "bin", "/b/x")).unwrap(),
+            None
+        );
         assert_eq!(executable("   Compiling wezterm v0.1.0").unwrap(), None);
     }
 
     #[test]
     fn a_program_carrying_a_build_machine_path_is_caught() {
         let paths = [PathBuf::from("/home/someone")];
-        assert_eq!(carried(b"x /home/someone/src/lib.rs", &paths), Some(&paths[0]));
+        assert_eq!(
+            carried(b"x /home/someone/src/lib.rs", &paths),
+            Some(&paths[0])
+        );
         assert_eq!(carried(b"x /wsb-wezterm/src/lib.rs", &paths), None);
     }
 
@@ -269,7 +301,9 @@ mod tests {
         std::fs::write(dir.path().join("version.txt"), "1.51.3451\n").unwrap();
         assert_eq!(version(dir.path()).unwrap(), "1.51.3451");
         std::fs::write(dir.path().join("version.txt"), "20261117-120000-dc780c05\n").unwrap();
-        assert!(version(dir.path()).unwrap_err().contains("not the <major>.<minor>.<patch>"));
+        assert!(version(dir.path())
+            .unwrap_err()
+            .contains("not the <major>.<minor>.<patch>"));
     }
 
     /// The program is held to its line and its version.
@@ -280,16 +314,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let program = dir.path().join("wsb-wezterm");
         let line = "https://r.example release prod a,b,c d,e,f";
-        std::fs::write(&program, format!("#!/bin/sh\n# {}\necho 'wsb-wezterm 1.2.3'\n", line)).unwrap();
+        std::fs::write(
+            &program,
+            format!("#!/bin/sh\n# {}\necho 'wsb-wezterm 1.2.3'\n", line),
+        )
+        .unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
         let built = Built {
             programs: vec![("wsb-wezterm", program.clone())],
             machine_paths: vec![],
         };
         assert!(check(&built, "1.2.3", line).is_ok());
-        assert!(check(&built, "1.2.4", line).unwrap_err().contains("says \"wsb-wezterm 1.2.3\""));
-        assert!(check(&built, "1.2.3", "https://r.example nightly prod a,b,c d,e,f")
+        assert!(check(&built, "1.2.4", line)
             .unwrap_err()
-            .contains("without the release line"));
+            .contains("says \"wsb-wezterm 1.2.3\""));
+        assert!(check(
+            &built,
+            "1.2.3",
+            "https://r.example nightly prod a,b,c d,e,f"
+        )
+        .unwrap_err()
+        .contains("without the release line"));
     }
 }

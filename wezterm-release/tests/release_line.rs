@@ -25,7 +25,10 @@ fn roots() -> String {
 /// A whole release line's variables, with `changes` applied (an empty value removes one).
 fn given(changes: &[(&str, &str)]) -> BTreeMap<String, String> {
     let mut vars: BTreeMap<String, String> = [
-        (release_line::REGISTRY, "https://releases.example".to_string()),
+        (
+            release_line::REGISTRY,
+            "https://releases.example".to_string(),
+        ),
         (release_line::CHANNEL, "release".to_string()),
         (release_line::ENVIRONMENT, "prod".to_string()),
         (release_line::ROOTS, roots()),
@@ -82,9 +85,18 @@ fn each_part_of_a_line_is_held_to_its_shape() {
         let e = read(&given(changes)).unwrap_err();
         assert!(e.contains(says), "{} does not say {:?}", e, says);
     };
-    refused(&[(release_line::REGISTRY, "http://releases.example")], "must be an https URL");
-    refused(&[(release_line::CHANNEL, "beta")], "must be `release` or `nightly`");
-    refused(&[(release_line::ENVIRONMENT, "dev")], "must be `prod` or `staging`");
+    refused(
+        &[(release_line::REGISTRY, "http://releases.example")],
+        "must be an https URL",
+    );
+    refused(
+        &[(release_line::CHANNEL, "beta")],
+        "must be `release` or `nightly`",
+    );
+    refused(
+        &[(release_line::ENVIRONMENT, "dev")],
+        "must be `prod` or `staging`",
+    );
     let two = [key(1), key(2)].join(",");
     refused(&[(release_line::ROOTS, &two)], "has 2 root(s)");
     let twice = [key(1), key(2), key(1)].join(",");

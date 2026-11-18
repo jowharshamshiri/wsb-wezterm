@@ -150,9 +150,17 @@ pub fn upgrade_with(
     let directory = set
         .parent()
         .ok_or_else(|| format!("{} is in no directory", set.display()))?;
-    let staging = Staging::new(directory)?;
+    let mut staging = Staging::new(directory)?;
     let unpacked = take(transport, &newest, staging.path())?;
-    put_in_place(&unpacked, &set, &staging.path().join("previous"))?;
+    let aside = staging.path().join("previous");
+    if let Err(failed) = put_in_place(&unpacked, &set, &aside, &|from, to| {
+        std::fs::rename(from, to)
+    }) {
+        if failed.stranded {
+            staging.keep();
+        }
+        return Err(failed.message);
+    }
     Ok(Outcome::Installed {
         channel: line.channel.clone(),
         platform: platform.to_string(),
@@ -187,8 +195,12 @@ fn installed_set(program: &Path, platform: &str) -> Result<PathBuf, String> {
 
 /// A folder beside the installed set for one upgrade's download, on the same file system so
 /// the sets move in one rename each; removed with everything in it, the previous set
-/// included, when the upgrade ends, however it ends.
-struct Staging(PathBuf);
+/// included, when the upgrade ends, however it ends, unless it is kept because the previous
+/// set could not be moved back out of it.
+struct Staging {
+    path: PathBuf,
+    kept: bool,
+}
 
 impl Staging {
     fn new(directory: &Path) -> Result<Staging, String> {
@@ -200,20 +212,29 @@ impl Staging {
                 e
             )
         })?;
-        Ok(Staging(path))
+        Ok(Staging { path, kept: false })
     }
 
     fn path(&self) -> &Path {
-        &self.0
+        &self.path
+    }
+
+    /// Leaves the folder where it is when the upgrade ends: it holds the only copy of the
+    /// previous set.
+    fn keep(&mut self) {
+        self.kept = true;
     }
 }
 
 impl Drop for Staging {
     fn drop(&mut self) {
-        if let Err(e) = std::fs::remove_dir_all(&self.0) {
+        if self.kept {
+            return;
+        }
+        if let Err(e) = std::fs::remove_dir_all(&self.path) {
             eprintln!(
                 "wsb-wezterm: could not remove {}, which the upgrade downloaded into: {}",
-                self.0.display(),
+                self.path.display(),
                 e
             );
         }
@@ -274,33 +295,198 @@ fn says_version(program: &Path) -> Result<String, Problem> {
         .to_string())
 }
 
-/// Moves the installed `set` aside to `aside` and `new` into its place: two renames, the second
-/// undone by moving the old set back when it fails.
-fn put_in_place(new: &Path, set: &Path, aside: &Path) -> Result<(), String> {
-    std::fs::rename(set, aside).map_err(|e| {
-        format!(
+/// Why the new set is not in place, and whether the old one is still where it was moved aside
+/// to (`stranded`), outside the place it is run from.
+#[derive(Debug)]
+struct NotInPlace {
+    message: String,
+    stranded: bool,
+}
+
+/// Moves the installed `set` aside to `aside` and `new` into its place, with `rename`: two
+/// renames, the second undone by moving the old set back when it fails. An old set that cannot
+/// be moved back either stays at `aside`, and the failure names it.
+fn put_in_place(
+    new: &Path,
+    set: &Path,
+    aside: &Path,
+    rename: &dyn Fn(&Path, &Path) -> std::io::Result<()>,
+) -> Result<(), NotInPlace> {
+    rename(set, aside).map_err(|e| NotInPlace {
+        message: format!(
             "cannot move {} aside to {}: {}",
             set.display(),
             aside.display(),
             e
-        )
+        ),
+        stranded: false,
     })?;
-    if let Err(e) = std::fs::rename(new, set) {
-        let back = std::fs::rename(aside, set)
-            .map(|()| "the old wsb-wezterm is back in place".to_string())
-            .unwrap_or_else(|back| {
-                format!(
-                    "and the old wsb-wezterm could not be moved back from {}: {}",
-                    aside.display(),
-                    back
-                )
-            });
-        return Err(format!(
-            "cannot put the new wsb-wezterm in place at {}: {}; {}",
+    if let Err(e) = rename(new, set) {
+        let failed = format!(
+            "cannot put the new wsb-wezterm in place at {}: {}",
             set.display(),
-            e,
-            back
-        ));
+            e
+        );
+        return Err(match rename(aside, set) {
+            Ok(()) => NotInPlace {
+                message: format!("{}; the old wsb-wezterm is back in place", failed),
+                stranded: false,
+            },
+            Err(back) => NotInPlace {
+                message: format!(
+                    "{}; and the old wsb-wezterm could not be moved back from {}: {}. It is kept there: \
+                     move it back to {} by hand",
+                    failed,
+                    aside.display(),
+                    back,
+                    set.display()
+                ),
+                stranded: true,
+            },
+        });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::io;
+
+    /// An installed set, a new one beside it, and where the installed one goes aside, each with
+    /// a file naming which it is.
+    struct Sets {
+        _dir: tempfile::TempDir,
+        new: PathBuf,
+        set: PathBuf,
+        aside: PathBuf,
+    }
+
+    impl Sets {
+        fn new() -> Sets {
+            let dir = tempfile::tempdir().unwrap();
+            let staging = dir.path().join(".wsb-wezterm-upgrade-1");
+            let new = staging.join("unpacked").join("wsb-wezterm");
+            let set = dir.path().join("wsb-wezterm");
+            std::fs::create_dir_all(&new).unwrap();
+            std::fs::create_dir_all(&set).unwrap();
+            std::fs::write(new.join("which"), "new").unwrap();
+            std::fs::write(set.join("which"), "old").unwrap();
+            Sets {
+                new,
+                set,
+                aside: staging.join("previous"),
+                _dir: dir,
+            }
+        }
+
+        fn which(folder: &Path) -> String {
+            std::fs::read_to_string(folder.join("which")).unwrap()
+        }
+    }
+
+    /// A rename that fails for each source in `failing` and renames anything else.
+    fn renaming_but<'a>(
+        failing: &'a [&'a Path],
+        calls: &'a RefCell<Vec<PathBuf>>,
+    ) -> impl Fn(&Path, &Path) -> io::Result<()> + 'a {
+        move |from, to| {
+            calls.borrow_mut().push(from.to_path_buf());
+            if failing.iter().any(|failing| *failing == from) {
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "the rename was refused",
+                ))
+            } else {
+                std::fs::rename(from, to)
+            }
+        }
+    }
+
+    #[test]
+    fn the_new_set_takes_the_installed_ones_place() {
+        let sets = Sets::new();
+        let calls = RefCell::new(Vec::new());
+        put_in_place(
+            &sets.new,
+            &sets.set,
+            &sets.aside,
+            &renaming_but(&[], &calls),
+        )
+        .unwrap();
+        assert_eq!(Sets::which(&sets.set), "new");
+        assert_eq!(Sets::which(&sets.aside), "old");
+    }
+
+    #[test]
+    fn a_new_set_that_cannot_be_put_in_place_puts_the_old_one_back() {
+        let sets = Sets::new();
+        let calls = RefCell::new(Vec::new());
+        let failed = put_in_place(
+            &sets.new,
+            &sets.set,
+            &sets.aside,
+            &renaming_but(&[&sets.new], &calls),
+        )
+        .unwrap_err();
+        assert!(!failed.stranded, "{}", failed.message);
+        assert!(
+            failed
+                .message
+                .contains("the old wsb-wezterm is back in place"),
+            "{}",
+            failed.message
+        );
+        assert_eq!(Sets::which(&sets.set), "old");
+        assert!(!sets.aside.exists());
+    }
+
+    #[test]
+    fn an_old_set_that_cannot_be_moved_back_is_left_where_it_is_and_named() {
+        let sets = Sets::new();
+        let calls = RefCell::new(Vec::new());
+        let failed = put_in_place(
+            &sets.new,
+            &sets.set,
+            &sets.aside,
+            &renaming_but(&[&sets.new, &sets.aside], &calls),
+        )
+        .unwrap_err();
+        assert!(failed.stranded, "{}", failed.message);
+        assert!(
+            failed.message.contains(&sets.aside.display().to_string()),
+            "{}",
+            failed.message
+        );
+        assert!(
+            failed
+                .message
+                .contains(&format!("move it back to {} by hand", sets.set.display())),
+            "{}",
+            failed.message
+        );
+        assert_eq!(Sets::which(&sets.aside), "old");
+        assert_eq!(
+            *calls.borrow(),
+            vec![sets.set.clone(), sets.new.clone(), sets.aside.clone()]
+        );
+    }
+
+    #[test]
+    fn a_staging_folder_is_removed_unless_it_holds_the_old_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let removed = Staging::new(dir.path()).unwrap();
+        let removed_path = removed.path().to_path_buf();
+        std::fs::write(removed_path.join("download"), "x").unwrap();
+        drop(removed);
+        assert!(!removed_path.exists());
+
+        let mut kept = Staging::new(dir.path()).unwrap();
+        let kept_path = kept.path().to_path_buf();
+        std::fs::create_dir(kept_path.join("previous")).unwrap();
+        kept.keep();
+        drop(kept);
+        assert!(kept_path.join("previous").is_dir());
+    }
 }

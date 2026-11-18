@@ -32,7 +32,11 @@ fn entry(name: &str, from: PathBuf, program: bool) -> Entry {
 /// places take from it when a package installs it (the desktop entry, the icon, the completions,
 /// the shell integration, the terminfo source), all beside the programs.
 pub const LINUX_FILES: &[(&str, &str, bool)] = &[
-    ("open-wsb-wezterm-here", "assets/open-wsb-wezterm-here", true),
+    (
+        "open-wsb-wezterm-here",
+        "assets/open-wsb-wezterm-here",
+        true,
+    ),
     ("LICENSE.md", "LICENSE.md", false),
     (
         "share/applications/com.bahramj.wsb-wezterm.desktop",
@@ -83,7 +87,11 @@ pub const LINUX_FILES: &[(&str, &str, bool)] = &[
 
 /// The repository's files the macOS bundle carries, by their place in `wsb-wezterm.app`.
 pub const MACOS_FILES: &[(&str, &str, bool)] = &[
-    ("Contents/Info.plist", "assets/macos/wsb-wezterm.app/Contents/Info.plist", false),
+    (
+        "Contents/Info.plist",
+        "assets/macos/wsb-wezterm.app/Contents/Info.plist",
+        false,
+    ),
     (
         "Contents/Resources/terminal.icns",
         "assets/macos/wsb-wezterm.app/Contents/Resources/terminal.icns",
@@ -94,9 +102,21 @@ pub const MACOS_FILES: &[(&str, &str, bool)] = &[
         "assets/shell-integration/wsb-wezterm.sh",
         false,
     ),
-    ("Contents/Resources/shell-completion/bash", "assets/shell-completion/bash", false),
-    ("Contents/Resources/shell-completion/zsh", "assets/shell-completion/zsh", false),
-    ("Contents/Resources/shell-completion/fish", "assets/shell-completion/fish", false),
+    (
+        "Contents/Resources/shell-completion/bash",
+        "assets/shell-completion/bash",
+        false,
+    ),
+    (
+        "Contents/Resources/shell-completion/zsh",
+        "assets/shell-completion/zsh",
+        false,
+    ),
+    (
+        "Contents/Resources/shell-completion/fish",
+        "assets/shell-completion/fish",
+        false,
+    ),
     ("Contents/Resources/LICENSE.md", "LICENSE.md", false),
 ];
 
@@ -139,7 +159,8 @@ pub fn set(
         entries.push(entry(&program_place(platform, name), from.clone(), true));
     }
     if platform.starts_with("darwin-") {
-        let terminfo = terminfo.ok_or("a macOS release carries the compiled terminfo, and none was made")?;
+        let terminfo =
+            terminfo.ok_or("a macOS release carries the compiled terminfo, and none was made")?;
         for (relative, from) in files_under(terminfo)? {
             entries.push(entry(
                 &format!("Contents/Resources/terminfo/{}", relative),
@@ -217,7 +238,11 @@ mod tests {
         }
         assert!(names.contains(&"share/applications/com.bahramj.wsb-wezterm.desktop"));
         assert!(names.contains(&"share/terminfo/wsb-wezterm.terminfo"));
-        let programs: Vec<&str> = entries.iter().filter(|e| e.program).map(|e| e.name.as_str()).collect();
+        let programs: Vec<&str> = entries
+            .iter()
+            .filter(|e| e.program)
+            .map(|e| e.name.as_str())
+            .collect();
         assert_eq!(programs.len(), PROGRAMS.len() + 1, "{:?}", programs);
     }
 
@@ -229,7 +254,13 @@ mod tests {
         let terminfo = dir.path().join("terminfo");
         std::fs::create_dir_all(terminfo.join("77")).unwrap();
         std::fs::write(terminfo.join("77/wsb-wezterm"), "compiled").unwrap();
-        let entries = set("darwin-arm64", &repository(), &built(dir.path()), Some(&terminfo)).unwrap();
+        let entries = set(
+            "darwin-arm64",
+            &repository(),
+            &built(dir.path()),
+            Some(&terminfo),
+        )
+        .unwrap();
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         assert!(names.contains(&"Contents/MacOS/wsb-wezterm"));
         assert!(names.contains(&"Contents/MacOS/wsb-wezterm-mux-server"));

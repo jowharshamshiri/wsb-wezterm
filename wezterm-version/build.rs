@@ -12,7 +12,9 @@ fn main() {
     if release {
         println!("cargo:rerun-if-changed=../version.txt");
         let version = std::fs::read_to_string("../version.txt").unwrap_or_else(|e| {
-            panic!("a release build of wsb-wezterm is named by version.txt, which cannot be read: {e}")
+            panic!(
+                "a release build of wsb-wezterm is named by version.txt, which cannot be read: {e}"
+            )
         });
         ci_tag = version.trim().to_string();
         let numbers: Vec<&str> = ci_tag.split('.').collect();
