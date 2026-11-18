@@ -122,6 +122,27 @@ pub fn upgrade_with(
     program: &Path,
     installed: &str,
 ) -> Result<Outcome, String> {
+    upgrade_renaming(
+        transport,
+        line,
+        platform,
+        now,
+        program,
+        installed,
+        &|from, to| std::fs::rename(from, to),
+    )
+}
+
+/// [`upgrade_with`], moving the sets with `rename`.
+pub(crate) fn upgrade_renaming(
+    transport: &dyn Transport,
+    line: &Line,
+    platform: &str,
+    now: u64,
+    program: &Path,
+    installed: &str,
+    rename: &dyn Fn(&Path, &Path) -> std::io::Result<()>,
+) -> Result<Outcome, String> {
     let Some(newest) = crate::fetch_latest(transport, line, platform, now)? else {
         return Ok(Outcome::NothingPublished {
             channel: line.channel.clone(),
@@ -153,9 +174,7 @@ pub fn upgrade_with(
     let mut staging = Staging::new(directory)?;
     let unpacked = take(transport, &newest, staging.path())?;
     let aside = staging.path().join("previous");
-    if let Err(failed) = put_in_place(&unpacked, &set, &aside, &|from, to| {
-        std::fs::rename(from, to)
-    }) {
+    if let Err(failed) = put_in_place(&unpacked, &set, &aside, rename) {
         if failed.stranded {
             staging.keep();
         }
@@ -388,16 +407,13 @@ mod tests {
 
     /// A rename that fails for each source in `failing` and renames anything else.
     fn renaming_but<'a>(
-        failing: &'a [&'a Path],
+        failing: &'a [PathBuf],
         calls: &'a RefCell<Vec<PathBuf>>,
     ) -> impl Fn(&Path, &Path) -> io::Result<()> + 'a {
         move |from, to| {
             calls.borrow_mut().push(from.to_path_buf());
-            if failing.iter().any(|failing| *failing == from) {
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "the rename was refused",
-                ))
+            if failing.iter().any(|failing| failing == from) {
+                Err(io::Error::other("the rename was refused"))
             } else {
                 std::fs::rename(from, to)
             }
@@ -427,7 +443,7 @@ mod tests {
             &sets.new,
             &sets.set,
             &sets.aside,
-            &renaming_but(&[&sets.new], &calls),
+            &renaming_but(std::slice::from_ref(&sets.new), &calls),
         )
         .unwrap_err();
         assert!(!failed.stranded, "{}", failed.message);
@@ -450,7 +466,7 @@ mod tests {
             &sets.new,
             &sets.set,
             &sets.aside,
-            &renaming_but(&[&sets.new, &sets.aside], &calls),
+            &renaming_but(&[sets.new.clone(), sets.aside.clone()], &calls),
         )
         .unwrap_err();
         assert!(failed.stranded, "{}", failed.message);

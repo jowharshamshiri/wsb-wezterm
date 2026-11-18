@@ -326,6 +326,42 @@ fn the_newest_release_replaces_the_whole_installed_set() {
     }
 }
 
+/// An upgrade that can neither put the new set in place nor move the old one back keeps the
+/// old one where it moved it aside, and says where: it is the only wsb-wezterm left.
+#[test]
+fn an_old_set_that_cannot_be_put_back_outlives_the_upgrade_and_is_named() {
+    let publisher = Publisher::new();
+    let served = published(&publisher, "prod");
+    let installed = Installed::new("1.51.3451", LINUX);
+    let refusing = |from: &Path, to: &Path| {
+        if from.ends_with("unpacked/wsb-wezterm") || from.ends_with("previous") {
+            Err(std::io::Error::other("the rename was refused"))
+        } else {
+            std::fs::rename(from, to)
+        }
+    };
+    let e = crate::install::upgrade_renaming(
+        &served,
+        &publisher.line("release", "prod"),
+        LINUX,
+        NOW,
+        &installed.program,
+        "1.51.3451",
+        &refusing,
+    )
+    .unwrap_err();
+    let kept = installed
+        .folder
+        .join(format!(".wsb-wezterm-upgrade-{}", std::process::id()))
+        .join("previous");
+    assert!(e.contains(&kept.display().to_string()), "{}", e);
+    assert_eq!(
+        std::fs::read(kept.join(program_in_root(LINUX))).unwrap(),
+        program("1.51.3451")
+    );
+    assert!(!installed.set.exists());
+}
+
 /// The same release, or an older one, installs nothing: never a downgrade.
 #[test]
 fn a_release_no_later_than_the_running_one_installs_nothing() {
@@ -359,7 +395,9 @@ fn an_archive_other_than_the_signed_release_is_refused_and_nothing_changes() {
     let mut changed = archive.clone();
     let middle = changed.len() / 2;
     changed[middle] ^= 1;
-    let cases: Vec<(&str, Option<Vec<u8>>, Vec<u8>)> = vec![
+    // Each refusal's reason, what is served in place of the signed archive (if anything), and
+    // the archive the manifest signs.
+    let cases = vec![
         ("archive_sha256_mismatch", Some(changed), archive.clone()),
         (
             "archive_size_mismatch",

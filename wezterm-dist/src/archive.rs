@@ -14,6 +14,12 @@ pub fn name(version: &str, platform: &str) -> String {
     wezterm_release::archive_name(version, platform)
 }
 
+/// What one member of the archive is.
+enum Member {
+    Folder,
+    File { program: bool, bytes: Vec<u8> },
+}
+
 /// Writes the archive of `entries` for `platform` to `out`: the set's one directory, each
 /// folder an entry names, and each entry, in name order. The same files make the same bytes:
 /// no times, no owner; a folder and a program are 0755 and any other file 0644.
@@ -30,7 +36,7 @@ pub fn write(entries: &[Entry], platform: &str, out: &Path) -> Result<()> {
     {
         return Err(format!("{} is no name a release archive holds", entry.name));
     }
-    let mut members: Vec<(String, Option<(bool, Vec<u8>)>)> = vec![(format!("{}/", root), None)];
+    let mut members: Vec<(String, Member)> = vec![(format!("{}/", root), Member::Folder)];
     let mut folders = std::collections::BTreeSet::new();
     for entry in sorted {
         let path = format!("{}/{}", root, entry.name);
@@ -41,9 +47,15 @@ pub fn write(entries: &[Entry], platform: &str, out: &Path) -> Result<()> {
         }
         let bytes = std::fs::read(&entry.from)
             .map_err(|e| format!("cannot read {}: {}", entry.from.display(), e))?;
-        members.push((path, Some((entry.program, bytes))));
+        members.push((
+            path,
+            Member::File {
+                program: entry.program,
+                bytes,
+            },
+        ));
     }
-    members.extend(folders.into_iter().map(|f| (f, None)));
+    members.extend(folders.into_iter().map(|f| (f, Member::Folder)));
     members.sort_by(|a, b| a.0.cmp(&b.0));
 
     let file = std::fs::File::create(out)
@@ -53,20 +65,20 @@ pub fn write(entries: &[Entry], platform: &str, out: &Path) -> Result<()> {
         .mtime(0)
         .write(file, flate2::Compression::best());
     let mut b = tar::Builder::new(gz);
-    for (path, file) in &members {
+    for (path, member) in &members {
         let mut h = tar::Header::new_gnu();
         h.set_mtime(0);
         h.set_uid(0);
         h.set_gid(0);
-        match file {
-            None => {
+        match member {
+            Member::Folder => {
                 h.set_entry_type(tar::EntryType::Directory);
                 h.set_mode(0o755);
                 h.set_size(0);
                 b.append_data(&mut h, path, std::io::empty())
                     .map_err(fail)?;
             }
-            Some((program, bytes)) => {
+            Member::File { program, bytes } => {
                 h.set_entry_type(tar::EntryType::Regular);
                 h.set_mode(if *program { 0o755 } else { 0o644 });
                 h.set_size(bytes.len() as u64);
