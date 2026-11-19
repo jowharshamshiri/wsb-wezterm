@@ -197,6 +197,12 @@ stops, saying why, unless the release line is given whole and `wsb-wezterm` carr
 program carries a path of the machine it was built on, and `wsb-wezterm --version` names the
 version. The same files make the same archive, byte for byte, with no AppleDouble `._` entry.
 
+On Linux the build links with the rust-lld the toolchain ships, through cc, as rustc links x86_64
+Linux by default and not arm64 Linux, and stops, naming the path, when the toolchain has no
+`lib/rustlib/<triple>/bin/gcc-ld/ld.lld`. std reaches `pidfd_spawnp` and `pidfd_getpid` (glibc
+2.39) weakly, and runs without them; rust-lld makes a glibc version needed only that way a weak
+need, which an older glibc starts the programs past, where GNU ld would make it a hard one.
+
 A build given no release line, `cargo build` included, is a build from source:
 `wsb-wezterm upgrade` says it has no release line to follow.
 

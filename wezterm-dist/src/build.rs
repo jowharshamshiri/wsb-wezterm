@@ -78,6 +78,49 @@ fn remaps(pairs: &[(PathBuf, &str)]) -> String {
         .join("\u{1f}")
 }
 
+/// The target rustc builds for when given none: this machine's, which the programs are built for.
+fn rustc_host() -> Result<String> {
+    let out = run(Command::new("rustc").arg("-vV"))?;
+    String::from_utf8_lossy(&out)
+        .lines()
+        .find_map(|l| l.strip_prefix("host: "))
+        .map(|h| h.trim().to_owned())
+        .ok_or_else(|| "rustc -vV names no host".to_owned())
+}
+
+/// The flags that link the programs for `target`, with the toolchain at `sysroot`. A Linux build
+/// links with the rust-lld that toolchain ships, through cc as rustc links when it picks rust-lld
+/// itself. rustc picks it for x86_64 Linux and not for arm64 Linux, where it links with GNU ld,
+/// and the two linkers differ in what the programs then need of glibc: std references
+/// `pidfd_spawnp` and `pidfd_getpid` (glibc 2.39) weakly, and runs without them where glibc has
+/// none. rust-lld makes a version needed only by weak references a weak need, which an older
+/// glibc's loader passes over; GNU ld makes it a hard need, and that loader refuses to start the
+/// program.
+fn link_flags(target: &str, sysroot: &Path) -> Result<Vec<String>> {
+    if !target.ends_with("-linux-gnu") {
+        return Ok(Vec::new());
+    }
+    // Where rustc looks for its own linker: among the host's tools, and `target` is the host.
+    let gcc_ld = sysroot
+        .join("lib")
+        .join("rustlib")
+        .join(target)
+        .join("bin")
+        .join("gcc-ld");
+    let lld = gcc_ld.join("ld.lld");
+    if !lld.is_file() {
+        return Err(format!(
+            "{} is not there: a Linux release links with the rust-lld its toolchain ships, and the toolchain at {} ships none",
+            lld.display(),
+            sysroot.display()
+        ));
+    }
+    Ok(vec![
+        "-Clink-arg=-fuse-ld=lld".to_owned(),
+        format!("-Clink-arg=-B{}", gcc_ld.display()),
+    ])
+}
+
 /// Builds the programs for this machine's platform, given the release line in the
 /// environment, which the build bakes into `wsb-wezterm`.
 pub fn build(repo: &Path, macos_deployment_target: Option<&str>) -> Result<Built> {
@@ -93,6 +136,7 @@ pub fn build(repo: &Path, macos_deployment_target: Option<&str>) -> Result<Built
     let sysroot = PathBuf::from(
         String::from_utf8_lossy(&run(Command::new("rustc").args(["--print", "sysroot"]))?).trim(),
     );
+    let link = link_flags(&rustc_host()?, &sysroot)?;
     let mut pairs: Vec<(PathBuf, &str)> = Vec::new();
     if let Some(home) = std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -109,9 +153,11 @@ pub fn build(repo: &Path, macos_deployment_target: Option<&str>) -> Result<Built
         (sysroot, "/rustc"),
     ]);
 
+    let rustflags: Vec<String> = std::iter::once(remaps(&pairs)).chain(link).collect();
+
     let mut cmd = Command::new("cargo");
     cmd.current_dir(repo)
-        .env("CARGO_ENCODED_RUSTFLAGS", remaps(&pairs))
+        .env("CARGO_ENCODED_RUSTFLAGS", rustflags.join("\u{1f}"))
         .args([
             "build",
             "--locked",
@@ -335,5 +381,105 @@ mod tests {
         )
         .unwrap_err()
         .contains("without the release line"));
+    }
+
+    /// The version needs of the ELF program at `path`, as `readelf` reads them: each version of a
+    /// library the program needs, and whether that need is weak.
+    #[cfg(target_os = "linux")]
+    fn version_needs(path: &Path) -> Vec<(String, String, bool)> {
+        let out = run(Command::new("readelf")
+            .args(["--version-info", "--wide"])
+            .arg(path))
+        .unwrap();
+        let text = String::from_utf8(out).unwrap();
+        let section = text
+            .split("Version needs section")
+            .nth(1)
+            .unwrap_or_else(|| panic!("{} has no version needs:\n{}", path.display(), text));
+        let mut file = String::new();
+        let mut needs = Vec::new();
+        for line in section.lines().skip(1) {
+            if line.trim().is_empty() {
+                break;
+            }
+            let field = |name: &str| {
+                line.split(name)
+                    .nth(1)
+                    .and_then(|rest| rest.split_whitespace().next())
+                    .map(str::to_owned)
+            };
+            if let Some(f) = field("File: ") {
+                file = f;
+            } else if let (Some(name), Some(flags)) = (field("Name: "), field("Flags: ")) {
+                needs.push((
+                    file.clone(),
+                    name,
+                    flags.split('|').any(|f| f.trim() == "WEAK"),
+                ));
+            }
+        }
+        needs
+    }
+
+    /// A Linux release's programs need glibc's newer versions weakly where they reference them
+    /// weakly, linked as rustc links on an arm64 build machine.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_linux_release_needs_weakly_referenced_glibc_versions_weakly() {
+        let host = rustc_host().unwrap();
+        let sysroot = PathBuf::from(
+            String::from_utf8_lossy(
+                &run(Command::new("rustc").args(["--print", "sysroot"])).unwrap(),
+            )
+            .trim(),
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("probe.rs");
+        // Starting a program takes std through pidfd_spawnp and pidfd_getpid, which it references
+        // weakly and which came in glibc 2.39, after the floor a release keeps to.
+        std::fs::write(
+            &source,
+            "fn main() { std::process::Command::new(\"true\").status().unwrap(); }\n",
+        )
+        .unwrap();
+        let probe = dir.path().join("probe");
+        let mut rustc = Command::new("rustc");
+        rustc
+            .args(["--edition", "2021", "-O"])
+            .arg(&source)
+            .arg("-o")
+            .arg(&probe);
+        // How rustc links an arm64 Linux program unless told otherwise, on any machine: through cc
+        // and GNU ld. rustc for x86_64 Linux links with rust-lld by default.
+        rustc.args(["-C", "linker-features=-lld"]);
+        rustc.args(link_flags(&host, &sysroot).unwrap());
+        run(&mut rustc).unwrap();
+
+        let needs = version_needs(&probe);
+        let pidfd = needs
+            .iter()
+            .find(|(file, name, _)| file == "libc.so.6" && name == "GLIBC_2.39")
+            .unwrap_or_else(|| {
+                panic!(
+                    "the probe needs no GLIBC_2.39 of libc.so.6, so this machine's glibc is older than 2.39 and the test shows nothing on it: {:?}",
+                    needs
+                )
+            });
+        assert!(
+            pidfd.2,
+            "the probe needs libc.so.6's GLIBC_2.39 outright, which a glibc older than 2.39 refuses to start, though it references that version weakly alone: {:?}",
+            needs
+        );
+
+        let bare = dir.path().join("sysroot");
+        let lld = bare
+            .join("lib")
+            .join("rustlib")
+            .join(&host)
+            .join("bin")
+            .join("gcc-ld")
+            .join("ld.lld");
+        let e = link_flags(&host, &bare).unwrap_err();
+        assert!(e.contains(&lld.display().to_string()), "{}", e);
     }
 }
