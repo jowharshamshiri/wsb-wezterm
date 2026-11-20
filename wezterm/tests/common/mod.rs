@@ -154,7 +154,14 @@ impl Server {
             .unwrap()
             .write_all(input.as_bytes())
             .unwrap();
-        child.wait_with_output().unwrap()
+        // A server that stops answering fails the test, rather than hanging
+        // it.
+        let (sent, output) = channel();
+        std::thread::spawn(move || sent.send(child.wait_with_output()));
+        output
+            .recv_timeout(WAIT)
+            .unwrap_or_else(|_| panic!("wsb-wezterm cli {:?} did not end within {:?}", args, WAIT))
+            .unwrap()
     }
 
     pub fn panes(&self) -> Vec<Value> {

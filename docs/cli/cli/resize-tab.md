@@ -6,7 +6,12 @@
 
 Sizes a tab as a whole: `--cols` columns and `--rows` rows. The multiplexer
 shares the size out among the tab's panes by its layout, as it does when a
-window is resized, and every client sees the new layout.
+window is resized, and every client sees the new layout. Each split gives
+both its parts its whole new length along its divider, and shares the cells
+beside its divider between its parts in proportion to the cells each had,
+each part keeping a cell for each of its panes and dividers; so every pane,
+nested splits included, follows the tab's size, and the layout fills the tab
+exactly.
 
 The tab is the one given by `--tab-id`, else the tab that holds `--pane-id`,
 else the tab of the current pane (see [Targeting Panes](index.md#targeting-panes)).

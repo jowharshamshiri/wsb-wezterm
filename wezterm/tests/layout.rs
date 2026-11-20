@@ -693,21 +693,23 @@ fn a_tab_relay_whose_input_ends_has_sized_the_tab_first() {
     // A program sizing a tab writes one resize and closes the relay's input:
     // the relay ends only once the server has given the tab that size, as a
     // whole, for a tab of one pane, of one split, of a split within a split
-    // either way, and of three panes side by side. Every tree fills the tab.
+    // either way, and of three panes side by side. Every tree fills the tab,
+    // each split sharing it between its parts in proportion to what they had:
+    // a split of 80 columns at 39 and 40 gives 78 and 81 of 160.
     for (splits, sized) in [
         (&[][..], "0:160x48@0,0"),
-        (&[(0, "--right")][..], "(0:79x48@0,0 | 1:80x48@80,0)"),
+        (&[(0, "--right")][..], "(0:78x48@0,0 | 1:81x48@79,0)"),
         (
             &[(0, "--right"), (1, "--bottom")][..],
-            "(0:79x48@0,0 | (1:80x23@80,0 / 2:80x24@80,24))",
+            "(0:78x48@0,0 | (1:81x22@79,0 / 2:81x25@79,23))",
         ),
         (
             &[(0, "--bottom"), (1, "--right")][..],
-            "(0:160x23@0,0 / (1:79x24@0,24 | 2:80x24@80,24))",
+            "(0:160x22@0,0 / (1:78x25@0,23 | 2:81x25@79,23))",
         ),
         (
             &[(0, "--right"), (1, "--right")][..],
-            "(0:79x48@0,0 | (1:59x48@80,0 | 2:20x48@140,0))",
+            "(0:78x48@0,0 | (1:39x48@79,0 | 2:41x48@119,0))",
         ),
     ] {
         let server = server();
@@ -844,6 +846,96 @@ fn a_tab_is_not_resized_below_what_its_layout_needs() {
     );
     drop(relay);
     assert_eq!(layout(&server, 0), before);
+}
+
+/// Sizes the tab holding `pane` `cols` x `rows` with `cli resize-tab`.
+fn resize_tab(server: &Server, pane: u64, cols: usize, rows: usize) {
+    let said = server.cli(&[
+        "resize-tab",
+        "--pane-id",
+        &pane.to_string(),
+        "--cols",
+        &cols.to_string(),
+        "--rows",
+        &rows.to_string(),
+    ]);
+    assert_eq!(said.trim(), r#"{"sized_by_window":null}"#);
+}
+
+/// Checks that the layout of the tab holding `pane` fills the tab, and that
+/// each pane's terminal, as `list` says, is the size of its place.
+fn assert_panes_sized_as_placed(server: &Server, pane: u64) {
+    fn places(node: &Value, found: &mut Vec<(u64, u64, u64)>) {
+        if let Some(pane) = node.get("pane") {
+            found.push((
+                pane["id"].as_u64().unwrap(),
+                pane["cols"].as_u64().unwrap(),
+                pane["rows"].as_u64().unwrap(),
+            ));
+            return;
+        }
+        places(&node["split"]["first"], found);
+        places(&node["split"]["second"], found);
+    }
+    let tab = layout(server, pane);
+    assert_fills(&tab);
+    let mut placed = vec![];
+    places(&tab["root"], &mut placed);
+    let listed = server.panes();
+    for (id, cols, rows) in placed {
+        let size = &listed
+            .iter()
+            .find(|pane| pane["pane_id"] == json!(id))
+            .unwrap_or_else(|| panic!("list has no pane {id}: {listed:?}"))["size"];
+        assert_eq!(
+            (size["cols"].as_u64(), size["rows"].as_u64()),
+            (Some(cols), Some(rows)),
+            "pane {id}'s terminal is not the size of its place in {tab}"
+        );
+    }
+}
+
+#[test]
+fn every_pane_of_a_tab_follows_the_tabs_size() {
+    // An 80x24 tab split right at 45% by a command, then grown to 120x46:
+    // both parts, and their terminals, take the tab's new rows and their
+    // share of its new columns.
+    let server = server();
+    let right = split(&server, 0, &["--right", "--percent", "45"]);
+    assert_eq!(tab_shape(&server, 0), "(0:43x24@0,0 | 1:36x24@44,0)");
+    resize_tab(&server, 0, 120, 46);
+    assert_eq!(tab_shape(&server, 0), "(0:65x46@0,0 | 1:54x46@66,0)");
+    assert_panes_sized_as_placed(&server, 0);
+    // Moving the divider keeps the tab filled, rows and all.
+    server.cli(&[
+        "adjust-pane-size",
+        "--pane-id",
+        &right.to_string(),
+        "--amount",
+        "5",
+        "Left",
+    ]);
+    assert_eq!(tab_shape(&server, 0), "(0:60x46@0,0 | 1:59x46@61,0)");
+    assert_panes_sized_as_placed(&server, 0);
+    // Splits on every side, by cells and by percent, each nested in a
+    // split of its own direction or across it; the tab is then shrunk to
+    // the least its layout fits in, 5x5, and grown again.
+    let below = split(&server, 0, &["--bottom", "--cells", "10"]);
+    split(&server, below, &["--bottom", "--percent", "30"]);
+    split(&server, right, &["--left", "--cells", "8"]);
+    split(&server, right, &["--top", "--percent", "20"]);
+    assert_panes_sized_as_placed(&server, 0);
+    for (cols, rows) in [(5, 5), (97, 31), (6, 7), (200, 60), (80, 24)] {
+        resize_tab(&server, 0, cols, rows);
+        let tab = layout(&server, 0);
+        assert_eq!(
+            (&tab["cols"], &tab["rows"]),
+            (&json!(cols), &json!(rows)),
+            "{}",
+            tab
+        );
+        assert_panes_sized_as_placed(&server, 0);
+    }
 }
 
 #[test]
