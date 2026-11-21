@@ -75,6 +75,7 @@ installed beside it, and the two keep their configuration and state apart:
 
 ### macOS
 
+- **Closing a window no longer crashes wsb-wezterm.** The font fallback thread, which builds the system's fallback font list and ends with its window's fonts, read the user's preferred languages into an array that released them when dropped, though the array was not the thread's to release. When the thread exited, as a window closed, its autorelease pool released the freed array again, and the GUI crashed. Closing every window at once, as when a GUI's server goes away, made it likely. The languages are now retained before they are released.
 - **The title bar shows the terminal's background, not the desktop.** An opaque window's background is now the color scheme's background color rather than clear. Where macOS draws the title bar translucent, it showed whatever was behind the window, leaving only the title and the window buttons visible.
 
 ### Arranging panes

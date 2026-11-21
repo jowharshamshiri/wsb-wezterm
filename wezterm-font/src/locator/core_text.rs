@@ -5,7 +5,7 @@ use crate::locator::{FontDataSource, FontLocator, FontOrigin};
 use crate::parser::ParsedFont;
 use cocoa::base::id;
 use config::{FontAttributes, FontStretch, FontStyle, FontWeight};
-use core_foundation::array::CFArray;
+use core_foundation::array::{CFArray, CFArrayRef};
 use core_foundation::base::{CFRange, TCFType};
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::{CFString, CFStringRef};
@@ -248,19 +248,36 @@ fn build_fallback_list() -> Vec<ParsedFont> {
     })
 }
 
+/// The languages the user prefers (`AppleLanguages`), most preferred first;
+/// none when the user has set none.
+///
+/// The fallback list is built on the font fallback thread, which ends when
+/// its window's fonts are dropped. `stringArrayForKey:` hands back an array
+/// the caller does not own, autoreleased into the calling thread's pool: so
+/// the array is taken under the get rule (the wrapper retains it, and
+/// releases only that), and the pool is drained here rather than when the
+/// thread exits.
+fn preferred_languages() -> anyhow::Result<CFArray<CFString>> {
+    let key = "AppleLanguages"
+        .parse::<CFString>()
+        .map_err(|_| anyhow::anyhow!("failed to make the CFString AppleLanguages"))?;
+    Ok(objc::rc::autoreleasepool(|| unsafe {
+        let user_defaults: id = msg_send![class!(NSUserDefaults), standardUserDefaults];
+        let langs: CFArrayRef =
+            msg_send![user_defaults, stringArrayForKey: key.as_concrete_TypeRef()];
+        if langs.is_null() {
+            CFArray::from_CFTypes(&[])
+        } else {
+            CFArray::wrap_under_get_rule(langs)
+        }
+    }))
+}
+
 fn build_fallback_list_impl() -> anyhow::Result<Vec<ParsedFont>> {
     let menlo =
         new_from_name("Menlo", 0.0).map_err(|_| anyhow::anyhow!("failed to get Menlo font"))?;
 
-    let user_defaults: id = unsafe { msg_send![class!(NSUserDefaults), standardUserDefaults] };
-
-    let apple_lang = "AppleLanguages"
-        .parse::<CFString>()
-        .map_err(|_| anyhow::anyhow!("failed to parse lang name en as CFString"))?;
-
-    let langs: CFArray<CFString> =
-        unsafe { msg_send![user_defaults, stringArrayForKey:apple_lang] };
-
+    let langs = preferred_languages()?;
     let cascade = cascade_list_for_languages(&menlo, &langs);
     let mut fonts = vec![];
     // Explicitly include Menlo itself, as it appears to be the only
@@ -323,4 +340,35 @@ fn build_fallback_list_impl() -> anyhow::Result<Vec<ParsedFont>> {
     }
 
     Ok(fonts)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    /// A thread that read the preferred languages exits cleanly: its
+    /// autorelease pool holds nothing the thread released already, as a
+    /// window's font fallback thread does when the window closes.
+    #[test]
+    fn threads_reading_the_preferred_languages_exit_cleanly() {
+        for _ in 0..50 {
+            std::thread::spawn(|| {
+                let langs = preferred_languages().unwrap();
+                // Every entry is a string the array still holds.
+                for lang in langs.iter() {
+                    assert!(!lang.to_string().is_empty());
+                }
+            })
+            .join()
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn the_fallback_list_is_built_on_a_thread_that_then_exits() {
+        let count = std::thread::spawn(|| build_fallback_list_impl().unwrap().len())
+            .join()
+            .unwrap();
+        assert!(count > 0);
+    }
 }
