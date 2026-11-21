@@ -100,6 +100,11 @@ impl Server {
             .env_remove("WSB_WEZTERM_PANE")
     }
 
+    /// The server's unix socket.
+    pub fn socket(&self) -> &Path {
+        &self.socket
+    }
+
     pub fn wezterm(&self) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_wsb-wezterm"));
         command.arg("--config-file").arg(&self.config);
@@ -227,14 +232,15 @@ impl Server {
             .arg("--config-file")
             .arg(&config)
             .args(["connect", "t"]);
+        let log = self.dir.path().join("window.log");
         let child = Self::environment(&mut command, self.dir.path(), &self.socket, &config)
             .env("DISPLAY", display)
             .env_remove("WAYLAND_DISPLAY")
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(std::fs::File::create(&log).unwrap())
             .spawn()
             .unwrap();
-        Window { child }
+        Window { child, log }
     }
 
     /// Wait until the pane shows `text`.
@@ -266,6 +272,15 @@ impl Drop for Server {
 /// A wsb-wezterm window, ended with the test.
 pub struct Window {
     pub child: Child,
+    /// Where what it logs goes.
+    pub log: PathBuf,
+}
+
+impl Window {
+    /// What it has logged so far.
+    pub fn logged(&self) -> String {
+        std::fs::read_to_string(&self.log).unwrap()
+    }
 }
 
 impl Drop for Window {

@@ -183,3 +183,78 @@ fn a_window_sizes_the_tabs_of_the_workspace_it_shows_as_a_whole_and_a_relay_does
         resized
     );
 }
+
+/// Send `signal` to the server's process.
+fn signal(server: &Server, signal: &str) {
+    let status = Command::new("kill")
+        .args([&format!("-{}", signal), &server.child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(status.success(), "kill -{} failed", signal);
+}
+
+/// Waits until the window's program has exited, failing the test with what
+/// it logged if it has not within `wait`.
+fn wait_for_exit(window: &mut common::Window, wait: Duration) {
+    let deadline = Instant::now() + wait;
+    while window.child.try_wait().unwrap().is_none() {
+        assert!(
+            Instant::now() < deadline,
+            "the window is still open {:?} on; it logged: {}",
+            wait,
+            window.logged()
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+#[test]
+fn a_window_whose_server_stops_says_so_and_closes() {
+    let display = display();
+    let mut server = Server::sized(80, 24, &["cat"]);
+    let mut window = server.window(&display, 80, 24);
+    wait_for("a window attached", ATTACH, || windows(&server).pop());
+
+    signal(&server, "TERM");
+    server.child.wait().unwrap();
+    wait_for_exit(&mut window, WAIT);
+    let logged = window.logged();
+    assert!(
+        logged.contains("lost the terminal server, so its windows close"),
+        "{}",
+        logged
+    );
+}
+
+#[test]
+fn a_window_whose_server_stops_answering_says_so_and_closes() {
+    let display = display();
+    let server = Server::sized(80, 24, &["cat"]);
+    let mut window = server.window(&display, 80, 24);
+    let gui = wait_for("a window attached", ATTACH, || windows(&server).pop());
+    let found = xdotool(
+        &display,
+        &[
+            "search",
+            "--sync",
+            "--onlyvisible",
+            "--pid",
+            &gui["pid"].to_string(),
+        ],
+    );
+    let id = found.split_whitespace().next().unwrap().to_string();
+
+    // The server stops, with its connection open; the window then asks it
+    // to resize its tab, and no answer comes.
+    signal(&server, "STOP");
+    xdotool(&display, &["windowsize", "--sync", &id, "1000", "700"]);
+    wait_for_exit(&mut window, codec::STALL_LIMIT + WAIT);
+    let logged = window.logged();
+    signal(&server, "CONT");
+    assert!(
+        logged.contains("the server answered nothing for")
+            && logged.contains("lost the terminal server, so its windows close"),
+        "{}",
+        logged
+    );
+}
